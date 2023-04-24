@@ -1,0 +1,425 @@
+#version 460
+//#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_EXT_debug_printf : enable
+//#extension GL_KHR_shader_subgroup_vote : enable
+//#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+//#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
+//#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+
+//
+// compile this file with: glslangValidator --target-env vulkan1.3 -V s.comp
+//
+
+// each thread will consider this many k values
+#define NK 200
+
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) buffer buf
+{
+	uint64_t    P;       // input from CPU side
+	uint64_t    K;       // base K input from CPU side
+	uint64_t    Found;   // output to tell the CPU we found something
+	uint64_t    Err;     // output only used for debugging
+	uint64_t    Out[4];  // allow space for returning  upto 4 factors.
+};
+
+//
+// using p%60 and k%60, saves needing to sieve by small primes < 7.
+//
+bool kgood(uint pm, uint km) {
+	bool r = false;
+	switch (pm) {
+	case 1:
+		if (km == 0|| km == 3|| km == 8|| km == 11|| km == 15|| km == 20|| km == 23|| km == 24|| km == 35|| km == 36|| km == 39|| km == 44|| km == 48|| km == 51|| km == 56|| km == 59) {
+			r = true;
+		}
+		break;
+	case 7:
+		if (km == 0|| km == 5|| km == 8|| km == 9|| km == 12|| km == 17|| km == 20|| km == 24|| km == 29|| km == 32|| km == 33|| km == 44|| km == 45|| km == 48|| km == 53|| km == 57) {
+			r = true;
+		}
+		break;
+	case 11:
+		if (km == 0|| km == 1|| km == 4|| km == 9|| km == 13|| km == 16|| km == 21|| km == 24|| km == 25|| km == 28|| km == 33|| km == 36|| km == 40|| km == 45|| km == 48|| km == 49) {
+			r = true;
+		}
+		break;
+	case 13:
+		if (km == 0|| km == 3|| km == 8|| km == 11|| km == 12|| km == 15|| km == 20|| km == 23|| km == 27|| km == 32|| km == 35|| km == 36|| km == 47|| km == 48|| km == 51|| km == 56) {
+			r = true;
+		}
+		break;
+	case 17:
+		if (km == 0|| km == 3|| km == 4|| km == 7|| km == 12|| km == 15|| km == 19|| km == 24|| km == 27|| km == 28|| km == 39|| km == 40|| km == 43|| km == 48|| km == 52|| km == 55) {
+			r = true;
+		}
+		break;
+	case 19:
+		if (km == 0|| km == 5|| km == 9|| km == 12|| km == 17|| km == 20|| km == 21|| km == 24|| km == 29|| km == 32|| km == 36|| km == 41|| km == 44|| km == 45|| km == 56|| km == 57) {
+			r = true;
+		}
+		break;
+	case 23:
+		if (km == 0|| km == 1|| km == 12|| km == 13|| km == 16|| km == 21|| km == 25|| km == 28|| km == 33|| km == 36|| km == 37|| km == 40|| km == 45|| km == 48|| km == 52|| km == 57) {
+			r = true;
+		}
+		break;
+	case 29:
+		if (km == 0|| km == 4|| km == 7|| km == 12|| km == 15|| km == 16|| km == 19|| km == 24|| km == 27|| km == 31|| km == 36|| km == 39|| km == 40|| km == 51|| km == 52|| km == 55) {
+			r = true;
+		}
+		break;
+	case 31:
+		if (km == 0|| km == 5|| km == 8|| km == 9|| km == 20|| km == 21|| km == 24|| km == 29|| km == 33|| km == 36|| km == 41|| km == 44|| km == 45|| km == 48|| km == 53|| km == 56) {
+			r = true;
+		}
+		break;
+	case 37:
+		if (km == 0|| km == 3|| km == 8|| km == 12|| km == 15|| km == 20|| km == 23|| km == 24|| km == 27|| km == 32|| km == 35|| km == 39|| km == 44|| km == 47|| km == 48|| km == 59) {
+			r = true;
+		}
+		break;
+	case 41:
+		if (km == 0|| km == 3|| km == 4|| km == 15|| km == 16|| km == 19|| km == 24|| km == 28|| km == 31|| km == 36|| km == 39|| km == 40|| km == 43|| km == 48|| km == 51|| km == 55) {
+			r = true;
+		}
+		break;
+	case 43:
+		if (km == 0|| km == 5|| km == 8|| km == 12|| km == 17|| km == 20|| km == 21|| km == 32|| km == 33|| km == 36|| km == 41|| km == 45|| km == 48|| km == 53|| km == 56|| km == 57) {
+			r = true;
+		}
+		break;
+	case 47:
+		if (km == 0|| km == 4|| km == 9|| km == 12|| km == 13|| km == 24|| km == 25|| km == 28|| km == 33|| km == 37|| km == 40|| km == 45|| km == 48|| km == 49|| km == 52|| km == 57) {
+			r = true;
+		}
+		break;
+	case 49:
+		if (km == 0|| km == 11|| km == 12|| km == 15|| km == 20|| km == 24|| km == 27|| km == 32|| km == 35|| km == 36|| km == 39|| km == 44|| km == 47|| km == 51|| km == 56|| km == 59) {
+			r = true;
+		}
+		break;
+	case 53:
+		if (km == 0|| km == 3|| km == 7|| km == 12|| km == 15|| km == 16|| km == 27|| km == 28|| km == 31|| km == 36|| km == 40|| km == 43|| km == 48|| km == 51|| km == 52|| km == 55) {
+			r = true;
+		}
+		break;
+	case 59:
+		if (km == 0|| km == 1|| km == 4|| km == 9|| km == 12|| km == 16|| km == 21|| km == 24|| km == 25|| km == 36|| km == 37|| km == 40|| km == 45|| km == 49|| km == 52|| km == 57) {
+			r = true;
+		}
+		break;
+	};
+	return r;
+}
+
+// small primes for sieve()
+const uint sp[169] = {7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907, 911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997, 1009, 1013, 1019, 1021};
+
+
+struct uint128 {
+	uint64_t Hi, Lo;
+};
+struct uint96 {
+	uint H, M, L;
+};
+void Set(inout uint96 A, uint128 B) {
+	A.L = uint(B.Lo & 0xfffffffful);
+	A.M = uint(B.Lo >> 32);
+	A.H = uint(B.Hi & 0xfffffffful);
+}
+
+void Lsh(inout uint96 A) {
+	uint c1 = A.L & (1u << 31);
+	uint c2 = A.M & (1u << 31);
+	A.L <<= 1;
+	A.M <<= 1;
+	A.H <<= 1;
+	A.M |= c1 >> 31;
+	A.H |= c2 >> 31;
+}
+void Lsh(inout uint128 A) {
+	uint64_t c = A.Lo & (uint64_t(1) << 63);
+	A.Lo <<= 1;
+	A.Hi <<= 1;
+	A.Hi |= c >> 63;
+}
+
+void Rsh(inout uint96 A) {
+	uint b1 = A.H & 1u;
+	uint b2 = A.M & 1u;
+	A.H >>= 1;
+	A.M >>= 1;
+	A.M |= b1 << 31;
+	A.L >>= 1;
+	A.L |= b2 << 31;
+}
+void Rsh(inout uint128 A) {
+	uint64_t b = A.Hi & 1l;
+	A.Hi >>= 1;
+	A.Lo >>= 1;
+	A.Lo |= b << 63;
+}
+int Cmp(uint96 A, uint96 B) {
+	if (A.H > B.H) {return 1;}
+	if (A.H < B.H) {return -1;}
+	if (A.M > B.M || (A.M == B.M && A.L > B.L)) {return 1;}
+	if (A.M < B.M || (A.M == B.M && A.L < B.L)) {return -1;}
+	return 0;
+}
+int Cmp(uint128 A, uint128 B) {
+	if (A.Hi > B.Hi || (A.Hi == B.Hi && A.Lo > B.Lo)) {return 1;}
+	if (A.Hi < B.Hi || (A.Hi == B.Hi && A.Lo < B.Lo)) {return -1;}
+	return 0;
+}
+void Inc(inout uint96 A) {
+	A.L += 1;
+	if (A.L == 0) {
+		A.M += 1;
+		if (A.M == 0) {
+			A.H += 1;
+		}
+	}
+}
+void Inc(inout uint128 A) {
+	A.Lo += 1;
+	if (A.Lo == 0) {
+		A.Hi += 1;
+	}
+}
+void Sub(inout uint96 A, uint96 B) {
+	uint x = A.L - B.L;
+	uint C = 0;
+	if (x > A.L) {C++;}
+	A.L = x;
+	x = A.M - (B.M + C);
+	C = 0;
+	if (x > A.M) {C++;}
+	A.M = x;
+	A.H -= B.H + C;
+}
+void Sub(inout uint128 A, uint128 B) {
+	uint64_t x = A.Lo - B.Lo;
+	uint64_t C = (((x & B.Lo) & 1l) + (B.Lo >> 1) + (x >> 1)) >> 63;
+	A.Hi = A.Hi - (B.Hi + C);
+	A.Lo = x;
+}
+void Add(inout uint96 A, uint96 B) {
+	uint x = A.L + B.L;
+	uint C = 0;
+	if (x < A.L) {C++;}
+	A.L = x;
+	x = A.M + B.M + C;
+	C = 0;
+	if (x < A.M) {C++;}
+	A.M = x;
+	A.H += B.H + C;
+}
+void Add(inout uint128 A, uint128 B) {
+	uint64_t x = A.Lo + B.Lo;
+	uint64_t C = 0;
+	if (x < A.Lo) {C++;}
+	A.Hi = A.Hi + (B.Hi + C);
+	A.Lo = x;
+}
+bool Zero(uint96 A) {
+	return (A.L | A.M | A.H) == 0;
+}
+bool Zero(uint128 A) {
+	if (A.Lo == 0 && A.Hi == 0) {
+		return true;
+	}
+	return false;
+}
+//
+// Only used to compute Q = 2*P*K+1 for each K, so not a performance hit.
+// XXX: need to create multiply64to96
+//
+void multiply64to128(uint64_t lhs, uint64_t rhs, inout uint128 r) {
+
+	/* First calculate all of the cross products. */
+	uint64_t lo_lo = (lhs & 0xFFFFFFFFul) * (rhs & 0xFFFFFFFFul);
+	uint64_t hi_lo = (lhs >> 32)        * (rhs & 0xFFFFFFFFul);
+	uint64_t lo_hi = (lhs & 0xFFFFFFFFul) * (rhs >> 32);
+	uint64_t hi_hi = (lhs >> 32)        * (rhs >> 32);
+
+	/* Now add the products together. These will never overflow. */
+	uint64_t cross = (lo_lo >> 32) + (hi_lo & 0xFFFFFFFFul) + lo_hi;
+	uint64_t upper = (hi_lo >> 32) + (cross >> 32)        + hi_hi;
+
+	r.Hi = upper;
+	r.Lo = (cross << 32) | (lo_lo & 0xFFFFFFFFul);
+}
+//
+// This is fairly fast, for TF purposes, each for loop does 0, 1 or maybe sometimes 2 passes only
+//
+void Mod(inout uint128 A, uint128 B) {
+	uint128 X, A2;
+	X.Hi = B.Hi;
+	X.Lo = B.Lo;
+	A2.Lo = A.Lo;
+	A2.Hi = A.Hi;
+	Rsh(A2);
+
+	while (Cmp(X, A2) <= 0) {
+	        Lsh(X);
+	}
+	while (Cmp(A, B) >= 0) {
+		if (Cmp(A, X) >= 0) {
+			Sub(A, X);
+		}
+		Rsh(X);
+	}
+}
+void Mod(inout uint96 A, uint96 B) {
+	uint96 X, A2;
+	X = B;
+	A2 = A;
+	Rsh(A2);
+
+	while (Cmp(X, A2) <= 0) {
+	        Lsh(X);
+	}
+	while (Cmp(A, B) >= 0) {
+		if (Cmp(A, X) >= 0) {
+			Sub(A, X);
+		}
+		Rsh(X);
+	}
+}
+void ModLsh(inout uint96 A, uint96 B) {
+	uint96 X, A2;
+	X = B;
+	A2 = A;
+	//Rsh(A2);
+	Lsh(A);
+
+	while (Cmp(X, A2) <= 0) {
+	        Lsh(X);
+	}
+	while (Cmp(A, B) >= 0) {
+		if (Cmp(A, X) >= 0) {
+			Sub(A, X);
+		}
+		Rsh(X);
+	}
+}
+//
+// Calculate A^2 mod Q, w/o using more than 128 bits.  This is slow, but easy to debug.
+// Use this to compare with results of faster implementations.
+//
+void SqMod(inout uint128 A, uint128 Q) {
+	uint128 a, b, r;
+	r.Lo = 0; r.Hi = 0;
+	a.Lo = A.Lo; a.Hi = A.Hi;
+	b.Lo = A.Lo; b.Hi = A.Hi;
+
+	// A is already mod Q
+	while (!Zero(b)) {
+		if ((b.Lo & 1) != 0) {
+			Add(r, a);
+			Mod(r, Q);
+		}
+		Lsh(a);
+		Mod(a, Q);
+		Rsh(b);
+	}
+	A.Lo = r.Lo;
+	A.Hi = r.Hi;
+}
+void SqMod(inout uint96 A, uint96 Q) {
+	uint96 a, b, r;
+	r.L = 0; r.M = 0; r.H = 0;
+	a.L = A.L; a.M = A.M; a.H = A.H;
+	b.L = A.L; b.M = A.M; b.H = A.H;
+
+	// A is already mod Q
+	while (!Zero(b)) {
+		if ((b.L & 1) != 0) {
+		       	Add(r, a);
+			Mod(r, Q);
+		}
+		//Lsh(a);
+		ModLsh(a, Q);
+		Rsh(b);
+	}
+	A.L = r.L;
+	A.M = r.M;
+	A.H = r.H;
+}
+
+//
+// We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
+// We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
+//
+const int ntestprimes = 100;  // tweak as needed
+bool sieve32(uint p2, uint64_t k) {
+
+	for (int i = 0; i < ntestprimes; i++) {
+		uint N = sp[i];
+		uint  r = (((p2 % N) * uint(k % N)) +1) % N;
+		if (r == 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void main() {
+	// Which thread are we?
+	uint I = gl_GlobalInvocationID.x;
+
+	const uint pm60 = uint(P % 60l);
+	const uint64_t p2 = P * 2;
+	const uint p2u = uint(p2);
+	const uint64_t p = P;
+	uint64_t klist[NK];
+	uint64_t kbase = K + I * NK;  // our chunk of k-values
+
+
+	// we start with NK - k-values to test, this will remove about 90%,
+	// leaving a short list to test further
+	int kl = 0;
+	for (uint64_t k = kbase; k < kbase + NK; k++) {
+		uint km = uint(k%60l);
+		if (kgood(pm60, km) && sieve32(p2u, k))
+		{
+			klist[kl++] = k;
+		}
+	}
+
+	int top = int(findMSB((p)));
+
+	int found = 0;
+	for (int i = 0; i < kl; i++) {
+		uint64_t k = klist[i];
+		uint128 sq, q;
+		uint96 sq9, q9;
+		multiply64to128(k, p, q);
+		Set(q9, q);
+		Lsh(q9);
+		Inc(q9);
+
+		// Do the TF math: Starting with 1, repeatedly square,
+		//  remove the top bit of the exponent and if 1 multiply squared value by 2,
+		//  then compute mod Q.
+		sq9.L = 1; sq9.M = 0; sq9.H = 0;
+		for (int b = top; b >= 0; b--) {
+			bool bb = (p & (1l << b)) != 0;
+			if (bb) {
+				Lsh(sq9);
+			}
+			SqMod(sq9, q9);
+		}
+		// If the result is 1, then we found a factor.
+		if (sq9.L == 1 && sq9.M == 0 && sq9.H == 0) {
+			Out[found] = k;
+			found++;
+			//Err = sqv.x;
+			Found = 1;  // tell the cpu side we found somthing.
+		}
+	}
+}
