@@ -9,7 +9,7 @@
 
 
 //
-// compile this file with: glslangValidator --target-env vulkan1.3 -V s.comp
+// compile this file with: glslangValidator --target-env vulkan1.3 -V tf.comp
 //
 
 // each thread will consider this many k values
