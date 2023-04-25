@@ -308,7 +308,7 @@ void ModLsh(inout uint96 A, uint96 B) {
 	}
 }
 //
-// Calculate A^2 mod Q, w/o using more than 128 bits.  This is slow, but easy to debug.
+// Calculate A^2 mod Q, w/o using no more than 128 bits.  This is slow, but easy to debug.
 // Use this to compare with results of faster implementations.
 //
 void SqMod(inout uint128 A, uint128 Q) {
@@ -355,7 +355,7 @@ void SqMod(inout uint96 A, uint96 Q) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-const int ntestprimes = 100;  // tweak as needed
+const int ntestprimes = 160;  // tweak as needed
 bool sieve32(uint p2, uint64_t k) {
 
 	for (int i = 0; i < ntestprimes; i++) {
@@ -399,23 +399,28 @@ void main() {
 		uint128 sq, q;
 		uint96 sq9, q9;
 		multiply64to128(k, p, q);
-		Set(q9, q);
 		Lsh(q9);
 		Inc(q9);
+		Set(q9, q);
 
 		// Do the TF math: Starting with 1, repeatedly square,
 		//  remove the top bit of the exponent and if 1 multiply squared value by 2,
 		//  then compute mod Q.
+		// 128bit version seems to be faster...
 		sq9.L = 1; sq9.M = 0; sq9.H = 0;
+		sq.Lo = 1; sq.Hi = 0;
 		for (int b = top; b >= 0; b--) {
 			bool bb = (p & (1l << b)) != 0;
 			if (bb) {
-				Lsh(sq9);
+				//Lsh(sq9);
+				Lsh(sq);
 			}
-			SqMod(sq9, q9);
+			//SqMod(sq9, q9);
+			SqMod(sq, q);
 		}
 		// If the result is 1, then we found a factor.
-		if (sq9.L == 1 && sq9.M == 0 && sq9.H == 0) {
+		if (sq.Lo == 1 && sq.Hi == 0) {
+			//if (sq9.L == 1 && sq9.M == 0 && sq9.H == 0) {
 			Out[found] = k;
 			found++;
 			//Err = sqv.x;
