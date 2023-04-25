@@ -16,6 +16,7 @@ struct Stuff {
 	uint64_t    K;
 	uint64_t    Found;
 	uint64_t    Err;
+	uint k4620[4620][4620];
 };
 
 #ifdef NDEBUG
@@ -197,6 +198,20 @@ public:
 		//p->P = 262359187;
 		p->Found = 0;
 		p->Err = 0;
+
+
+		// mrh - this is a little slow writing directly to the GPU memory...
+		for (uint k = 0; k < 4620; k++) {
+			for (uint n = 0; n < 4620; n++) {
+				uint q = 2 * n * k + 1;
+				if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
+					p->k4620[n][k] = 0;
+				} else {
+					p->k4620[n][k] = 1;
+				}
+			}
+		}
+
 		vkUnmapMemory(device, bufferMemory);
 	}
 

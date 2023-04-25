@@ -23,100 +23,12 @@ layout(binding = 0) buffer buf
 	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Err;     // output only used for debugging
+	uint k4620[4620][4620];
 };
 
-//
-// using p%60 and k%60, saves needing to sieve by small primes < 7.
-//
-bool kgood(uint pm, uint km) {
-	bool r = false;
-	switch (pm) {
-	case 1:
-		if (km == 0|| km == 3|| km == 8|| km == 11|| km == 15|| km == 20|| km == 23|| km == 24|| km == 35|| km == 36|| km == 39|| km == 44|| km == 48|| km == 51|| km == 56|| km == 59) {
-			r = true;
-		}
-		break;
-	case 7:
-		if (km == 0|| km == 5|| km == 8|| km == 9|| km == 12|| km == 17|| km == 20|| km == 24|| km == 29|| km == 32|| km == 33|| km == 44|| km == 45|| km == 48|| km == 53|| km == 57) {
-			r = true;
-		}
-		break;
-	case 11:
-		if (km == 0|| km == 1|| km == 4|| km == 9|| km == 13|| km == 16|| km == 21|| km == 24|| km == 25|| km == 28|| km == 33|| km == 36|| km == 40|| km == 45|| km == 48|| km == 49) {
-			r = true;
-		}
-		break;
-	case 13:
-		if (km == 0|| km == 3|| km == 8|| km == 11|| km == 12|| km == 15|| km == 20|| km == 23|| km == 27|| km == 32|| km == 35|| km == 36|| km == 47|| km == 48|| km == 51|| km == 56) {
-			r = true;
-		}
-		break;
-	case 17:
-		if (km == 0|| km == 3|| km == 4|| km == 7|| km == 12|| km == 15|| km == 19|| km == 24|| km == 27|| km == 28|| km == 39|| km == 40|| km == 43|| km == 48|| km == 52|| km == 55) {
-			r = true;
-		}
-		break;
-	case 19:
-		if (km == 0|| km == 5|| km == 9|| km == 12|| km == 17|| km == 20|| km == 21|| km == 24|| km == 29|| km == 32|| km == 36|| km == 41|| km == 44|| km == 45|| km == 56|| km == 57) {
-			r = true;
-		}
-		break;
-	case 23:
-		if (km == 0|| km == 1|| km == 12|| km == 13|| km == 16|| km == 21|| km == 25|| km == 28|| km == 33|| km == 36|| km == 37|| km == 40|| km == 45|| km == 48|| km == 52|| km == 57) {
-			r = true;
-		}
-		break;
-	case 29:
-		if (km == 0|| km == 4|| km == 7|| km == 12|| km == 15|| km == 16|| km == 19|| km == 24|| km == 27|| km == 31|| km == 36|| km == 39|| km == 40|| km == 51|| km == 52|| km == 55) {
-			r = true;
-		}
-		break;
-	case 31:
-		if (km == 0|| km == 5|| km == 8|| km == 9|| km == 20|| km == 21|| km == 24|| km == 29|| km == 33|| km == 36|| km == 41|| km == 44|| km == 45|| km == 48|| km == 53|| km == 56) {
-			r = true;
-		}
-		break;
-	case 37:
-		if (km == 0|| km == 3|| km == 8|| km == 12|| km == 15|| km == 20|| km == 23|| km == 24|| km == 27|| km == 32|| km == 35|| km == 39|| km == 44|| km == 47|| km == 48|| km == 59) {
-			r = true;
-		}
-		break;
-	case 41:
-		if (km == 0|| km == 3|| km == 4|| km == 15|| km == 16|| km == 19|| km == 24|| km == 28|| km == 31|| km == 36|| km == 39|| km == 40|| km == 43|| km == 48|| km == 51|| km == 55) {
-			r = true;
-		}
-		break;
-	case 43:
-		if (km == 0|| km == 5|| km == 8|| km == 12|| km == 17|| km == 20|| km == 21|| km == 32|| km == 33|| km == 36|| km == 41|| km == 45|| km == 48|| km == 53|| km == 56|| km == 57) {
-			r = true;
-		}
-		break;
-	case 47:
-		if (km == 0|| km == 4|| km == 9|| km == 12|| km == 13|| km == 24|| km == 25|| km == 28|| km == 33|| km == 37|| km == 40|| km == 45|| km == 48|| km == 49|| km == 52|| km == 57) {
-			r = true;
-		}
-		break;
-	case 49:
-		if (km == 0|| km == 11|| km == 12|| km == 15|| km == 20|| km == 24|| km == 27|| km == 32|| km == 35|| km == 36|| km == 39|| km == 44|| km == 47|| km == 51|| km == 56|| km == 59) {
-			r = true;
-		}
-		break;
-	case 53:
-		if (km == 0|| km == 3|| km == 7|| km == 12|| km == 15|| km == 16|| km == 27|| km == 28|| km == 31|| km == 36|| km == 40|| km == 43|| km == 48|| km == 51|| km == 52|| km == 55) {
-			r = true;
-		}
-		break;
-	case 59:
-		if (km == 0|| km == 1|| km == 4|| km == 9|| km == 12|| km == 16|| km == 21|| km == 24|| km == 25|| km == 36|| km == 37|| km == 40|| km == 45|| km == 49|| km == 52|| km == 57) {
-			r = true;
-		}
-		break;
-	};
-	return r;
-}
 
 // small primes for sieve()
-const uint sp[169] = {7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907, 911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997, 1009, 1013, 1019, 1021};
+const uint sp[279] = {11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907, 911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997, 1009, 1013, 1019, 1021, 1031, 1033, 1039, 1049, 1051, 1061, 1063, 1069, 1087, 1091, 1093, 1097, 1103, 1109, 1117, 1123, 1129, 1151, 1153, 1163, 1171, 1181, 1187, 1193, 1201, 1213, 1217, 1223, 1229, 1231, 1237, 1249, 1259, 1277, 1279, 1283, 1289, 1291, 1297, 1301, 1303, 1307, 1319, 1321, 1327, 1361, 1367, 1373, 1381, 1399, 1409, 1423, 1427, 1429, 1433, 1439, 1447, 1451, 1453, 1459, 1471, 1481, 1483, 1487, 1489, 1493, 1499, 1511, 1523, 1531, 1543, 1549, 1553, 1559, 1567, 1571, 1579, 1583, 1597, 1601, 1607, 1609, 1613, 1619, 1621, 1627, 1637, 1657, 1663, 1667, 1669, 1693, 1697, 1699, 1709, 1721, 1723, 1733, 1741, 1747, 1753, 1759, 1777, 1783, 1787, 1789, 1801, 1811, 1823, 1831, 1847};
 
 
 struct uint128 {
@@ -228,10 +140,7 @@ bool Zero(uint96 A) {
 	return (A.L | A.M | A.H) == 0;
 }
 bool Zero(uint128 A) {
-	if (A.Lo == 0 && A.Hi == 0) {
-		return true;
-	}
-	return false;
+	return A.Lo == 0 && A.Hi == 0;
 }
 //
 // Only used to compute Q = 2*P*K+1 for each K, so not a performance hit.
@@ -307,14 +216,14 @@ void ModLsh(inout uint96 A, uint96 B) {
 	}
 }
 //
-// Calculate A^2 mod Q, w/o using no more than 128 bits.  This is slow, but easy to debug.
+// Calculate A^2 mod Q, using no more than 128 bits.  This is slow, but easy to debug.
 // Use this to compare with results of faster implementations.
 //
 void SqMod(inout uint128 A, uint128 Q) {
 	uint128 a, b, r;
 	r.Lo = 0; r.Hi = 0;
-	a.Lo = A.Lo; a.Hi = A.Hi;
-	b.Lo = A.Lo; b.Hi = A.Hi;
+	a = A;
+	b = A;
 
 	// A is already mod Q
 	while (!Zero(b)) {
@@ -326,8 +235,7 @@ void SqMod(inout uint128 A, uint128 Q) {
 		Mod(a, Q);
 		Rsh(b);
 	}
-	A.Lo = r.Lo;
-	A.Hi = r.Hi;
+	A = r;
 }
 void SqMod(inout uint96 A, uint96 Q) {
 	uint96 a, b, r;
@@ -354,7 +262,18 @@ void SqMod(inout uint96 A, uint96 Q) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-const int ntestprimes = 160;  // tweak as needed
+const int ntestprimes = 200;  // tweak as needed
+bool sieve(uint64_t p2, uint64_t k) {
+
+	for (int i = 0; i < ntestprimes; i++) {
+		uint64_t N = uint64_t(sp[i]);
+		uint64_t r = (((p2 % N) * (k % N)) +1) % N;
+		if (r == 0) {
+			return false;
+		}
+	}
+	return true;
+}
 bool sieve32(uint p2, uint64_t k) {
 
 	for (int i = 0; i < ntestprimes; i++) {
@@ -369,13 +288,15 @@ bool sieve32(uint p2, uint64_t k) {
 
 void main() {
 	// Which thread are we?
+
 	uint I = gl_GlobalInvocationID.x;
 
-	const uint pm60 = uint(P % 60l);
+	const uint pm60 = uint(P % 4620l);
 	const uint64_t p2 = P * 2;
 	const uint p2u = uint(p2);
 	const uint64_t p = P;
-	uint64_t klist[NK];
+	uint64_t klist[NK/2];
+	uint64_t klist2[NK/2];
 	uint64_t kbase = K + I * NK;  // our chunk of k-values
 
 
@@ -383,13 +304,13 @@ void main() {
 	// leaving a short list to test further
 	int kl = 0;
 	for (uint64_t k = kbase; k < kbase + NK; k++) {
-		uint km = uint(k%60l);
-		if (kgood(pm60, km) && sieve32(p2u, k))
+		uint km = uint(k%4620l);
+		if (k4620[pm60][km] == 1 && sieve(p2, k))
 		{
 			klist[kl++] = k;
 		}
 	}
-
+	Err = kl;
 	int top = int(findMSB((p)));
 
 	for (int i = 0; i < kl; i++) {
