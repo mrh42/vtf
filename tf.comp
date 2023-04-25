@@ -21,9 +21,8 @@ layout(binding = 0) buffer buf
 {
 	uint64_t    P;       // input from CPU side
 	uint64_t    K;       // base K input from CPU side
-	uint64_t    Found;   // output to tell the CPU we found something
+	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Err;     // output only used for debugging
-	uint64_t    Out[4];  // allow space for returning  upto 4 factors.
 };
 
 //
@@ -393,7 +392,6 @@ void main() {
 
 	int top = int(findMSB((p)));
 
-	int found = 0;
 	for (int i = 0; i < kl; i++) {
 		uint64_t k = klist[i];
 		uint128 sq, q;
@@ -421,10 +419,8 @@ void main() {
 		// If the result is 1, then we found a factor.
 		if (sq.Lo == 1 && sq.Hi == 0) {
 			//if (sq9.L == 1 && sq9.M == 0 && sq9.H == 0) {
-			Out[found] = k;
-			found++;
+			Found = k;
 			//Err = sqv.x;
-			Found = 1;  // tell the cpu side we found somthing.
 		}
 	}
 }

@@ -9,15 +9,13 @@
 #include <sys/time.h>
 
 
-const int np = 8192*4;  // total threads to start
+const int np = 8192*8;  // total threads to start
 const int NK = 200; // must match shader
-const int NFPC = 4; // we can find at most 4 factors in a call.
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
 	uint64_t    Found;
 	uint64_t    Err;
-	uint64_t    Out[NFPC]; // list of k values that produce factors
 };
 
 #ifdef NDEBUG
@@ -177,13 +175,7 @@ public:
 		struct Stuff *p = (struct Stuff *) mappedMemory;
 		printf("K: %ld\n", p->K);
 		if (p->Found) {
-			for (int i = 0; i < NFPC; i++) {
-				uint64_t k = p->Out[i];
-				if (k != 0) {
-					printf("M%ld has factor with K=%ld E: %ld\n", p->P, k, p->Err);
-					p->Out[i] = 0;
-				}
-			}
+			printf("M%ld has factor with K=%ld E: %ld\n", p->P, p->Found, p->Err);
 			p->Found = 0;
 			p->Err = 0;
 			mrhDone = 1;
@@ -199,15 +191,12 @@ public:
 		p->P = 999983;
 		p->K = 1;
 		p->P = 133330459;
-		p->K = 43473136000;
-		//p->P = 133330849;
-		//p->K = 36627268677160;
+		//p->K = 17158841552176;
+		p->P = 133331333;
+		p->K = 606233641363280;
 		//p->P = 262359187;
 		p->Found = 0;
 		p->Err = 0;
-		for (int i = 0; i < NFPC; i++) {
-			p->Out[i] = 0;
-		}
 		vkUnmapMemory(device, bufferMemory);
 	}
 
