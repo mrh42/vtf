@@ -13,7 +13,7 @@
 //
 
 // each thread will consider this many k values
-#define NK 200
+#define NK 300
 
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -23,7 +23,7 @@ layout(binding = 0) buffer buf
 	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Err;     // output only used for debugging
-	uint k4620[4620][4620];
+	uint        k4620[4620][4620];
 };
 
 
@@ -262,7 +262,7 @@ void SqMod(inout uint96 A, uint96 Q) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-const int ntestprimes = 200;  // tweak as needed
+const int ntestprimes = 240;  // tweak as needed
 bool sieve(uint64_t p2, uint64_t k) {
 
 	for (int i = 0; i < ntestprimes; i++) {
@@ -300,7 +300,7 @@ void main() {
 	uint64_t kbase = K + I * NK;  // our chunk of k-values
 
 
-	// we start with NK - k-values to test, this will remove about 90%,
+	// we start with NK - k-values to test, this will remove about 93%,
 	// leaving a short list to test further
 	int kl = 0;
 	for (uint64_t k = kbase; k < kbase + NK; k++) {

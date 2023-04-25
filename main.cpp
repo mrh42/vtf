@@ -9,8 +9,8 @@
 #include <sys/time.h>
 
 
-const int np = 8192*8;  // total threads to start
-const int NK = 200; // must match shader
+const int np = 8192*2;  // total threads to start
+const int NK = 300; // must match shader
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
@@ -191,7 +191,7 @@ public:
 		mrhDone = 0;
 		p->P = 999983;
 		p->K = 1;
-		p->P = 133330459;
+		//p->P = 133330459;
 		//p->K = 17158841552176;
 		p->P = 133331333;
 		p->K = 606233641363280;
