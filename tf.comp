@@ -399,8 +399,8 @@ void main() {
 		uint128 sq, q;
 		uint96 sq9, q9;
 		multiply64to128(k, p, q);
-		Lsh(q9);
-		Inc(q9);
+		Lsh(q);
+		Inc(q);
 		Set(q9, q);
 
 		// Do the TF math: Starting with 1, repeatedly square,
