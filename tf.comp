@@ -342,7 +342,8 @@ void main() {
 	// we start with NK - k-values to test, first loop will remove 80%,
 	// the next loops will remove more, for about about 95% total.
 	// leaving a short list to test further
-	// the first loop uses a matrix from the cpu to eliminate p,k combinations that produce q=2pk+1, that is not prime.
+	// the first loop uses a matrix from the cpu to eliminate p,k combinations that produce q=2pk+1,
+	// that are divisible by a few small primes.
 	int kl = 0;
 	for (uint64_t k = kbase; k < kbase + NK; k++) {
 		uint km = uint(k%4620l);
@@ -368,7 +369,7 @@ void main() {
 	if (I == 0) {
 		Err = kl;  // just for debugging
 	}
-	// kl should be about 0.06*NK to about 0.1*NK at list point.
+	// kl should be about 0.06*NK to about 0.1*NK at this point.
 	int top = int(findMSB((p)));
 	for (int i = 0; i < kl; i++) {
 		uint64_t k = klist[i];
