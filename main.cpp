@@ -10,7 +10,7 @@
 
 
 const int np = 8192*2;  // total threads to start
-const int NK = 300; // must match shader
+const int NK = 200; // must match shader
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
@@ -146,7 +146,7 @@ public:
 
 	createCommandBuffer();
 
-	for (int i = 0; i < 300; i++) {
+	for (int i = 0; i < 30; i++) {
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
 
@@ -174,7 +174,7 @@ public:
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
-		printf("K: %ld\n", p->K);
+		printf("K: %ld Err %ld\n", p->K, p->Err);
 		if (p->Found) {
 			printf("M%ld has factor with K=%ld E: %ld\n", p->P, p->Found, p->Err);
 			p->Found = 0;
@@ -196,11 +196,13 @@ public:
 		p->P = 133331333;
 		p->K = 606233641363280;
 		//p->P = 262359187;
+		//p->K = 36070605073960;
 		p->Found = 0;
 		p->Err = 0;
 
 
 		// mrh - this is a little slow writing directly to the GPU memory...
+		// could write to a temp space, then memcpy().
 		for (uint k = 0; k < 4620; k++) {
 			for (uint n = 0; n < 4620; n++) {
 				uint q = 2 * n * k + 1;
