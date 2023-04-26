@@ -146,7 +146,7 @@ public:
 
 	createCommandBuffer();
 
-	for (int i = 0; i < 30; i++) {
+	for (int i = 0; i < 3000; i++) {
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
 
