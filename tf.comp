@@ -360,7 +360,7 @@ void main() {
 		kl = 0;
 		for (int i = 0; i < kl2; i++) {
 			uint64_t k = klist[i];
-			if (sieve(p2u, k, 1 + j*13, 16)) {
+			if (sieve(p2u, k, 1 + j*13, 13)) {
 				klist[kl++] = k;
 			}
 		}
