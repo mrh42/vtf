@@ -9,13 +9,14 @@
 #include <sys/time.h>
 
 
-const int np = 8192*2;  // total threads to start
-const int NK = 200; // must match shader
+const int np = 8192*4;  // total threads to start
+const int NK = 256; // must match shader
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
 	uint64_t    Found;
 	uint64_t    Err;
+	uint k60[60][60];
 	uint k4620[4620][4620];
 };
 
@@ -201,6 +202,16 @@ public:
 		p->Err = 0;
 
 
+		for (uint k = 0; k < 60; k++) {
+			for (uint n = 0; n < 60; n++) {
+				uint q = 2 * n * k + 1;
+				if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0)) {
+					p->k60[n][k] = 0;
+				} else {
+					p->k60[n][k] = 1;
+				}
+			}
+		}
 		// mrh - this is a little slow writing directly to the GPU memory...
 		// could write to a temp space, then memcpy().
 		for (uint k = 0; k < 4620; k++) {
