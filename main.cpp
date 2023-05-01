@@ -9,15 +9,15 @@
 #include <sys/time.h>
 
 
-const int np = 8192*4;  // total threads to start
-const int NK = 256; // must match shader
+const int np = 8192*8;  // total threads to start
+const int NK = 200; // must match shader
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
 	uint64_t    Found;
 	uint64_t    Err;
-	uint k60[60][60];
-	uint k4620[4620][4620];
+	//uint k60[60][60];
+	uint  k4620[4620][4620];
 };
 
 #ifdef NDEBUG
@@ -147,7 +147,7 @@ public:
 
 	createCommandBuffer();
 
-	for (int i = 0; i < 3000; i++) {
+	for (int i = 0; i < 30; i++) {
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
 
@@ -202,7 +202,7 @@ public:
 		p->Err = 0;
 
 
-		for (uint k = 0; k < 60; k++) {
+/*		for (uint k = 0; k < 60; k++) {
 			for (uint n = 0; n < 60; n++) {
 				uint q = 2 * n * k + 1;
 				if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0)) {
@@ -211,7 +211,7 @@ public:
 					p->k60[n][k] = 1;
 				}
 			}
-		}
+		}*/
 		// mrh - this is a little slow writing directly to the GPU memory...
 		// could write to a temp space, then memcpy().
 		for (uint k = 0; k < 4620; k++) {
@@ -759,8 +759,9 @@ public:
         */
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // the buffer is only submitted and used once in this application.
-        VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo)); // start recording commands.
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	//beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
         /*
         We need to bind a pipeline, AND a descriptor set before we dispatch.
@@ -775,7 +776,6 @@ public:
         The number of workgroups is specified in the arguments.
         If you are already familiar with compute shaders from OpenGL, this should be nothing new to you.
         */
-        //vkCmdDispatch(commandBuffer, (uint32_t)ceil(WIDTH / float(WORKGROUP_SIZE)), (uint32_t)ceil(HEIGHT / float(WORKGROUP_SIZE)), 1);
 	// mrh: match shader...
         vkCmdDispatch(commandBuffer, np/64, 1, 1);
 
