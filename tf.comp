@@ -12,6 +12,8 @@
 // compile this file with: glslangValidator --target-env vulkan1.3 -V tf.comp
 // or glslc --target-env=vulkan1.3 tf.comp
 //
+// Installing the 'vulkan-amdgpu' package will result in a significant (2.5x) performance increase.
+//
 
 // each thread will consider this many k values
 #define NK 400
@@ -39,6 +41,9 @@ struct uint256 {
 };
 struct uint96 {
 	uint H, M, L;
+};
+struct uint192 {
+	uint96 H, L;
 };
 void Set(inout uint96 A, uint128 B) {
 	A.L = uint(B.Lo & 0xfffffffful);
@@ -400,7 +405,6 @@ void SqMod2(inout uint128 A, uint128 Q) {
 	A = X.L;
 }
 
-
 //
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
@@ -535,7 +539,7 @@ void main() {
 	// If we call sieve() with count too high, too many threads are waiting around for a few to finish.
 	// find a balance between the inner and outer loops.
 	// The stage after this is fast enough that the time taken to seive is almost not worth it.
-	for (int j = 0; j < 5; j++) {
+	for (int j = 0; j < 3; j++) {
 		int kl2 = kl;
 		kl = 0;
 		for (int i = 0; i < kl2; i++) {
