@@ -9,7 +9,7 @@
 #include <sys/time.h>
 
 
-const int np = 8192*8;  // total threads to start
+const int np = 8192*64;  // total threads to start
 const int NK = 200; // must match shader
 struct Stuff {
 	uint64_t    P;
@@ -147,7 +147,7 @@ public:
 
 	createCommandBuffer();
 
-	for (int i = 0; i < 30; i++) {
+	for (int i = 0; i < 100; i++) {
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
 
@@ -192,10 +192,10 @@ public:
 		mrhDone = 0;
 		p->P = 999983;
 		p->K = 1;
-		//p->P = 133330459;
-		//p->K = 17158841552176;
-		p->P = 133331333;
-		p->K = 606233641363280;
+		p->P = 133330459;
+		p->K = 43473036040;
+		//p->P = 133331333;
+		//p->K = 606233641363280;
 		//p->P = 262359187;
 		//p->K = 36070605073960;
 		p->Found = 0;

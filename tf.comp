@@ -189,7 +189,7 @@ bool Zero(uint128 A) {
 	return A.Lo == 0 && A.Hi == 0;
 }
 //
-// Only used to compute Q = 2*P*K+1 for each K, so not a performance hit.
+// Used to compute Q = 2*P*K+1 for each K, and for the 256 multiplies below.
 // XXX: need to create multiply64to96
 //
 void multiply64to128(uint64_t lhs, uint64_t rhs, inout uint128 r) {
@@ -367,6 +367,7 @@ void SqMod(inout uint96 A, uint96 Q) {
 	A.H = r.H;
 }
 
+// 2^64, 2^128 and 2&192
 const 	double p64 = 18446744073709551616.0lf;
 const	double p128 = 340282366920938463463374607431768211456.0lf;
 const	double p192 = 6277101735386680763835789423207666416102355444464034512896.0lf;
@@ -382,26 +383,33 @@ void fto128(double f, out uint128 A) {
 	A.Hi = uint64_t(f / p64);
 	A.Lo = uint64_t(f - double(A.Hi) * p64);
 }
+
 void SqMod2(inout uint128 A, uint128 Q) {
 	uint256 X, Y;
 	uint128 D;
 
 	Sq256(A, X);
 
-	double q = toF(Q);
-	q = 0.999999999 / q;
+	// I don't really understand why this can't be 1.0.  If 1.0, D and Y are a little too big...
+	double qinv = 0.999999999999 / toF(Q);
+	double q  = toF(Q);
 
-	int i = 0;
-	while (i < 25 && Cmp(X, Q) > 0) {
+	int i = 0; // limit to 10, incase we have a bug, don't want to get stuck...
+
+	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
+	// Always guess a D a little low, and refine our guess as we get closer.
+	// normally takes 2 passes.
+	while (i < 10 && Cmp(X, Q) > 0) {
+
 		double x = toF(X);
-		fto128(x*q, D);
-		if (D.Hi == 0 && D.Lo == 0) {D.Lo = 1;}
+		fto128(x*qinv, D);
+		if (Zero(D)) {D.Lo = 1;}
 		Mul256(D, Q, Y);
 
 		Sub(X, Y);
 		i++;
 	}
-	
+	if (i > 5) {Err = i;}
 	A = X.L;
 }
 
@@ -523,12 +531,12 @@ void main() {
 	// shorten the list a number times by repeatly asking sieve() to check a range of small primes.
 	// If we call sieve() with count too high, too many threads are waiting around for a few to finish.
 	// find a balance between the inner and outer loops.
-	for (int j = 0; j < 13; j++) {
+	for (int j = 0; j < 3; j++) {
 		int kl2 = kl;
 		kl = 0;
 		for (int i = 0; i < kl2; i++) {
 			uint64_t k = klist[i];
-			if (sieve(p2u, k, 2 + j*13, 13)) {
+			if (sieve(p2u, k, 2 + j*7, 7)) {
 				klist[kl++] = k;
 			}
 		}
