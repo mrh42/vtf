@@ -29,7 +29,8 @@ layout(binding = 0) buffer buf
 	uint64_t    P;       // input from CPU side
 	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
-	uint64_t    Err;     // output only used for debugging
+	uint64_t    Debug[2];     // output only used for debugging
+	readonly uint        Nsp;
 	uint        Init;    // If this is 0, then we setup our tables once.
 	readonly uint        sp[100]; // These are passed from the CPU.
 	uint        k4620[4620][4620];  // GPU generates this during init=0 call
@@ -408,7 +409,7 @@ void SqMod2(inout uint128 A, uint128 Q) {
 		Sub(X, Y);
 		i++;
 	}
-	if (i > 2) {Err++;}
+	if (i > 2) {Debug[1]++;}
 	A = X.L;
 }
 
@@ -416,7 +417,7 @@ void SqMod2(inout uint128 A, uint128 Q) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-bool sieve(uint p2, uint64_t k, int low, int count) {
+bool sieve(uint p2, uint64_t k, int low, uint count) {
 
 	// start with 13 if pre-filtered with k4620, or 7 if using k60
 	for (int i = low; i < (low+count); i++) {
@@ -542,12 +543,12 @@ void main() {
 	kl = 0;
 	for (int i = 0; i < kl2; i++) {
 		uint64_t k = klist[i];
-		if (sieve(p2u, k, 2, 14)) {
+		if (sieve(p2u, k, 2, Nsp)) {
 			klist[kl++] = k;
 		}
 	}
 	if (I == 0) {
-	       	//Err = kl;  // just for debugging
+	       	Debug[0] = kl;  // just for debugging
 	}
 	//return;
 	// kl should be about 0.06*NK to about 0.1*NK at this point.
