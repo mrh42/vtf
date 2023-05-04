@@ -26,12 +26,12 @@ layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 // factor, but not all of the found factors.
 layout(binding = 0) buffer buf
 {	
-	uint64_t    P;       // input from CPU side
-	uint64_t    K;       // base K input from CPU side
+	readonly uint64_t    P;       // input from CPU side
+	readonly uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Debug[2];     // output only used for debugging
 	readonly uint        Nsp;
-	uint        Init;    // If this is 0, then we setup our tables once.
+	readonly uint        Init;    // If this is 0, then we setup our tables once.
 	readonly uint        sp[100]; // These are passed from the CPU.
 	uint        k4620[4620][4620];  // GPU generates this during init=0 call
 };
