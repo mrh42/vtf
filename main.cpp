@@ -10,7 +10,7 @@
 
 
 const int np = 8192*64;  // total threads to start, check shader, need atleast 4620 to initialize.
-const int NK = 400; // must match shader
+const int NK = 300; // must match shader
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
@@ -145,15 +145,12 @@ public:
         createDescriptorSet();
         createComputePipeline();
 
-	mrhInit(0);
-
 	createCommandBuffer();
-	fprintf(stderr, "mrh: init call start\n");
-	runCommandBuffer(); // get things initialized...
-	fprintf(stderr, "mrh: init call done\n");
-	mrhInit(1);
 
-	for (int i = 0; i < 100; i++) {
+	mrhInit();
+
+
+	for (int i = 0; i < 937480369; i++) {
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
 
@@ -176,17 +173,18 @@ public:
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
-		printf("K: %ld Err %ld\n", p->K, p->Err);
+		printf("K: %ld P: %ld Err %ld\n", p->K, p->P, p->Err);
 		if (p->Found) {
 			printf("M%ld has factor with K=%ld E: %ld\n", p->P, p->Found, p->Err);
 			p->Found = 0;
 			p->Err = 0;
 			mrhDone = 1;
 		}
+		p->Err = 0;
 		p->K += NK * np;
 		vkUnmapMemory(device, bufferMemory);
 	}
-	void mrhInit(uint init) {
+	void mrhInit() {
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
@@ -198,14 +196,27 @@ public:
 		p->P = 133331333;
 		p->K = 606233611363280;
 		//p->P = 262359187;
-		//p->K = 36070605073960;
+		//p->K = 36929909828640;
 		p->Found = 0;
 		p->Err = 0;
-		p->Init = init;
+		p->Init = 0;
 
+		// for (int k = 0; k < 4620; k++) {
+		// 	for (uint n = 0; n < 4620; n++) {
+		// 		uint q = 2 * n * k + 1;
+		// 		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
+		// 			p->k4620[n][k] = 0;
+		// 		} else {
+		// 			p->k4620[n][k] = 1;
+		// 		}
+		// 	}
+		// }
+		
 		for (int i = 0; i < 100; i++) {
 			p->sp[i] = csp[i];
 		}
+		runCommandBuffer();  // initialize some shader stuff
+		p->Init = 1;         // now we are done.
 		vkUnmapMemory(device, bufferMemory);
 	}
 

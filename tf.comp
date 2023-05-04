@@ -16,19 +16,23 @@
 //
 
 // each thread will consider this many k values
-#define NK 400
+#define NK 300
 
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
+// for speed, we only have space to return one found factor.  In the case of P with multiple close factors,
+// which could be found in the same invocation, these will write over each other.  Since we might have 512K threads
+// looking at hundreds of factors each, we don't want to allocate memory to avoid this.  So we'll learn of a
+// factor, but not all of the found factors.
 layout(binding = 0) buffer buf
 {	
 	uint64_t    P;       // input from CPU side
 	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Err;     // output only used for debugging
-	uint        Init;    // If this is 0, then when called we setup out tables and return.
-	uint        sp[100]; // These are passed from the CPU.
-	uint        k4620[4620][4620];  // GPU generates this durinit init=0 call
+	uint        Init;    // If this is 0, then we setup our tables once.
+	readonly uint        sp[100]; // These are passed from the CPU.
+	uint        k4620[4620][4620];  // GPU generates this during init=0 call
 };
 
 
@@ -360,7 +364,7 @@ void SqMod(inout uint96 A, uint96 Q) {
 }
 
 // 2^64, 2^128 and 2^192
-const 	double p64 = 18446744073709551616.0lf;
+const 	double p64 =  18446744073709551616.0lf;
 const	double p128 = 340282366920938463463374607431768211456.0lf;
 const	double p192 = 6277101735386680763835789423207666416102355444464034512896.0lf;
 
@@ -383,10 +387,11 @@ void SqMod2(inout uint128 A, uint128 Q) {
 
 	Sq256(A, X);
 
-	// I don't really understand why this can't be 1.0.  If 1.0, D and Y are a little too big...
-	double qinv = 0.999999999999 / toF(Q);
+	// Make our 1/q just a tiny bit too small, so we don't over estimate,
+	// but not so small as to need extra passes.
+	double qinv = 0.9999999999999995 / toF(Q);
 
-	int i = 0; // limit to 10, incase we have a bug, don't want to get stuck...
+	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
 
 	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
 	// Always guess D a little low, and refine our guess as we get closer.
@@ -395,13 +400,15 @@ void SqMod2(inout uint128 A, uint128 Q) {
 
 		double x = toF(X);
 		fto128(x*qinv, D);
-		if (Zero(D)) {D.Lo = 1;}
+		if (Zero(D)) {
+			D.Lo = 1;
+		}		
 		Mul256(D, Q, Y);
 
 		Sub(X, Y);
 		i++;
 	}
-	if (i > 5) {Err = i;}
+	if (i > 2) {Err++;}
 	A = X.L;
 }
 
@@ -409,20 +416,14 @@ void SqMod2(inout uint128 A, uint128 Q) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-//const int ntestprimes = 300;  // tweak as needed
-bool modkpn(uint p2, uint64_t k, uint N) {
-	uint64_t r = (((p2 % N) * (k % N)) +1) % N;
-	return r == 0;
-}
 bool sieve(uint p2, uint64_t k, int low, int count) {
 
 	// start with 13 if pre-filtered with k4620, or 7 if using k60
 	for (int i = low; i < (low+count); i++) {
 		uint N = sp[i];
-		//uint  r = (((p2 % N) * uint(k % N)) +1) % N;
-		if (modkpn(p2, k, N)) {
-			return false;
-		}
+		uint  r = (((p2 % N) * uint(k % N)) +1) % N;
+
+		if (r == 0) {return false;}
 	}
 	return true;
 }
@@ -507,7 +508,7 @@ void main() {
 	// Which thread are we?
 
 	uint I = gl_GlobalInvocationID.x;
-	// When called with Init == 0, we need to initialize ourselves.
+	// When called with Init == 0, we need to initialize ourselves and return.
 	if (Init == 0) {
 		init(I);
 		return;
@@ -535,23 +536,20 @@ void main() {
 			klist[kl++] = k;
 		}
 	}
-	// shorten the list a number times by repeatly asking sieve() to check a range of small primes.
-	// If we call sieve() with count too high, too many threads are waiting around for a few to finish.
-	// find a balance between the inner and outer loops.
+	// shorten the list by sking sieve() to check a range of small primes.
 	// The stage after this is fast enough that the time taken to seive is almost not worth it.
-	for (int j = 0; j < 3; j++) {
-		int kl2 = kl;
-		kl = 0;
-		for (int i = 0; i < kl2; i++) {
-			uint64_t k = klist[i];
-			if (sieve(p2u, k, 2 + j*4, 4)) {
-				klist[kl++] = k;
-			}
+	int kl2 = kl;
+	kl = 0;
+	for (int i = 0; i < kl2; i++) {
+		uint64_t k = klist[i];
+		if (sieve(p2u, k, 2, 14)) {
+			klist[kl++] = k;
 		}
 	}
 	if (I == 0) {
-	       	Err = kl;  // just for debugging
+	       	//Err = kl;  // just for debugging
 	}
+	//return;
 	// kl should be about 0.06*NK to about 0.1*NK at this point.
 	int top = int(findMSB((p)));
 	for (int i = 0; i < kl; i++) {
