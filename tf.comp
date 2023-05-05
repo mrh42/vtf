@@ -227,7 +227,7 @@ void SqMod(inout uint128 A, uint128 Q, bool doshift) {
 
 	// Make our 1/q just a tiny bit too small, so we don't over estimate,
 	// but not so small as to need extra passes.
-	double qinv = 0.9999999999999995 / toF(Q);
+	double qinv = 0.9999999999999 / toF(Q);
 
 	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
 
@@ -246,7 +246,7 @@ void SqMod(inout uint128 A, uint128 Q, bool doshift) {
 		Sub(X, Y);
 		i++;
 	}
-	if (i > 2) {Debug[1]++;}
+	if (i > 3) {Debug[1]++;}
 	A = X.L;
 }
 
