@@ -44,30 +44,11 @@ struct uint128 {
 struct uint256 {
 	uint128 H, L;
 };
-struct uint96 {
-	uint H, M, L;
-};
-struct uint192 {
-	uint96 H, L;
-};
-void Set(inout uint96 A, uint128 B) {
-	A.L = uint(B.Lo & 0xfffffffful);
-	A.M = uint(B.Lo >> 32);
-	A.H = uint(B.Hi & 0xfffffffful);
-}
+
 void Set(inout uint256 A, uint128 B) {
 	A.L = B;
 	A.H.Lo = 0;
 	A.H.Hi = 0;
-}
-void Lsh(inout uint96 A) {
-	uint c1 = A.L & (1u << 31);
-	uint c2 = A.M & (1u << 31);
-	A.L <<= 1;
-	A.M <<= 1;
-	A.H <<= 1;
-	A.M |= c1 >> 31;
-	A.H |= c2 >> 31;
 }
 void Lsh(inout uint128 A) {
 	uint64_t c = A.Lo & (uint64_t(1) << 63);
@@ -83,15 +64,6 @@ void Lsh(inout uint256 A) {
 	A.H.Lo |= c >> 63;
 }
 
-void Rsh(inout uint96 A) {
-	uint b1 = A.H & 1u;
-	uint b2 = A.M & 1u;
-	A.H >>= 1;
-	A.M >>= 1;
-	A.M |= b1 << 31;
-	A.L >>= 1;
-	A.L |= b2 << 31;
-}
 void Rsh(inout uint128 A) {
 	uint64_t b = A.Hi & 1l;
 	A.Hi >>= 1;
@@ -104,13 +76,6 @@ void Rsh(inout uint256 A) {
 	Rsh(A.H);
 	A.L.Hi |= b << 63;
 	
-}
-int Cmp(uint96 A, uint96 B) {
-	if (A.H > B.H) {return 1;}
-	if (A.H < B.H) {return -1;}
-	if (A.M > B.M || (A.M == B.M && A.L > B.L)) {return 1;}
-	if (A.M < B.M || (A.M == B.M && A.L < B.L)) {return -1;}
-	return 0;
 }
 int Cmp(uint128 A, uint128 B) {
 	if (A.Hi > B.Hi || (A.Hi == B.Hi && A.Lo > B.Lo)) {return 1;}
@@ -128,31 +93,11 @@ int Cmp(uint256 A, uint256 B) {
 	if (d != 0) { return d; }
 	return Cmp(A.L, B.L);
 }
-void Inc(inout uint96 A) {
-	A.L += 1;
-	if (A.L == 0) {
-		A.M += 1;
-		if (A.M == 0) {
-			A.H += 1;
-		}
-	}
-}
 void Inc(inout uint128 A) {
 	A.Lo += 1;
 	if (A.Lo == 0) {
 		A.Hi += 1;
 	}
-}
-void Sub(inout uint96 A, uint96 B) {
-	uint x = A.L - B.L;
-	uint C = 0;
-	if (x > A.L) {C++;}
-	A.L = x;
-	x = A.M - (B.M + C);
-	C = 0;
-	if (x > A.M) {C++;}
-	A.M = x;
-	A.H -= B.H + C;
 }
 void Sub(inout uint128 A, uint128 B) {
 	uint64_t x = A.Lo - B.Lo;
@@ -177,26 +122,12 @@ void Sub(inout uint256 A, uint256 B) {
 
 	A.H.Hi = A.H.Hi - (B.H.Hi + C);
 }
-void Add(inout uint96 A, uint96 B) {
-	uint x = A.L + B.L;
-	uint C = 0;
-	if (x < A.L) {C++;}
-	A.L = x;
-	x = A.M + B.M + C;
-	C = 0;
-	if (x < A.M) {C++;}
-	A.M = x;
-	A.H += B.H + C;
-}
 void Add(inout uint128 A, uint128 B) {
 	uint64_t x = A.Lo + B.Lo;
 	uint64_t C = 0;
 	if (x < A.Lo) {C++;}
 	A.Hi = A.Hi + (B.Hi + C);
 	A.Lo = x;
-}
-bool Zero(uint96 A) {
-	return (A.L | A.M | A.H) == 0;
 }
 bool Zero(uint128 A) {
 	return A.Lo == 0 && A.Hi == 0;
@@ -266,103 +197,6 @@ void Mul256(uint128 A, uint128 B, inout uint256 X) {
 	}
 }
 
-//
-// This is fairly fast, for TF purposes, each for loop does 0, 1 or maybe sometimes 2 passes only
-//
-void Mod(inout uint128 A, uint128 B) {
-	uint128 X, A2;
-	X.Hi = B.Hi;
-	X.Lo = B.Lo;
-	A2.Lo = A.Lo;
-	A2.Hi = A.Hi;
-	Rsh(A2);
-
-	while (Cmp(X, A2) <= 0) {
-	        Lsh(X);
-	}
-	while (Cmp(A, B) >= 0) {
-		if (Cmp(A, X) >= 0) {
-			Sub(A, X);
-		}
-		Rsh(X);
-	}
-}
-void Mod(inout uint96 A, uint96 B) {
-	uint96 X, A2;
-	X = B;
-	A2 = A;
-	Rsh(A2);
-
-	while (Cmp(X, A2) <= 0) {
-	        Lsh(X);
-	}
-	while (Cmp(A, B) >= 0) {
-		if (Cmp(A, X) >= 0) {
-			Sub(A, X);
-		}
-		Rsh(X);
-	}
-}
-
-void ModLsh(inout uint96 A, uint96 B) {
-	uint96 X, A2;
-	X = B;
-	A2 = A;
-	//Rsh(A2);
-	Lsh(A);
-
-	while (Cmp(X, A2) <= 0) {
-	        Lsh(X);
-	}
-	while (Cmp(A, B) >= 0) {
-		if (Cmp(A, X) >= 0) {
-			Sub(A, X);
-		}
-		Rsh(X);
-	}
-}
-//
-// Calculate A^2 mod Q, using no more than 128 bits.  This is slow, but easy to debug.
-// Use this to compare with results of faster implementations.
-//
-void SqMod(inout uint128 A, uint128 Q) {
-	uint128 a, b, r;
-	r.Lo = 0; r.Hi = 0;
-	a = A;
-	b = A;
-
-	// A is already mod Q
-	while (!Zero(b)) {
-		if ((b.Lo & 1) != 0) {
-			Add(r, a);
-			Mod(r, Q);
-		}
-		Lsh(a);
-		Mod(a, Q);
-		Rsh(b);
-	}
-	A = r;
-}
-void SqMod(inout uint96 A, uint96 Q) {
-	uint96 a, b, r;
-	r.L = 0; r.M = 0; r.H = 0;
-	a.L = A.L; a.M = A.M; a.H = A.H;
-	b.L = A.L; b.M = A.M; b.H = A.H;
-
-	// A is already mod Q
-	while (!Zero(b)) {
-		if ((b.L & 1) != 0) {
-		       	Add(r, a);
-			Mod(r, Q);
-		}
-		//Lsh(a);
-		ModLsh(a, Q);
-		Rsh(b);
-	}
-	A.L = r.L;
-	A.M = r.M;
-	A.H = r.H;
-}
 
 // 2^64, 2^128 and 2^192
 const 	double p64 =  18446744073709551616.0lf;
@@ -382,11 +216,14 @@ void fto128(double f, out uint128 A) {
 }
 
 // Floating point version
-void SqMod2(inout uint128 A, uint128 Q) {
+void SqMod(inout uint128 A, uint128 Q, bool doshift) {
 	uint256 X, Y;
 	uint128 D;
 
 	Sq256(A, X);
+	if (doshift) {
+		Lsh(X);
+	}
 
 	// Make our 1/q just a tiny bit too small, so we don't over estimate,
 	// but not so small as to need extra passes.
@@ -429,28 +266,6 @@ bool sieve(uint p2, uint64_t k, int low, uint count) {
 	return true;
 }
 
-bool tf96(uint64_t k, uint64_t p, int top) {
-	uint128 q;
-	uint96 sq9, q9;
-	multiply64to128(k, p, q);
-	Lsh(q);
-	Inc(q);
-	Set(q9, q);
-
-	// Do the TF math: Starting with 1, repeatedly square,
-	//  remove the top bit of the exponent and if 1 multiply squared value by 2,
-	//  then compute mod Q.
-	sq9.L = 1; sq9.M = 0; sq9.H = 0;
-	for (int b = top; b >= 0; b--) {
-		bool bb = (p & (1l << b)) != 0;
-		if (bb) {
-			Lsh(sq9);
-		}
-		SqMod(sq9, q9);
-	}
-	// If the result is 1, then we found a factor.
-	return sq9.L == 1 && sq9.H == 0 && sq9.M == 0;
-}
 bool tf(uint64_t k, uint64_t p, int top) {
 	uint128 sq, q;
 	multiply64to128(k, p, q);
@@ -463,30 +278,7 @@ bool tf(uint64_t k, uint64_t p, int top) {
 	sq.Lo = 1; sq.Hi = 0;
 	for (int b = top; b >= 0; b--) {
 		bool bb = (p & (1l << b)) != 0;
-		if (bb) {
-			Lsh(sq);
-		}
-		SqMod(sq, q);
-	}
-	// If the result is 1, then we found a factor.
-	return sq.Lo == 1 && sq.Hi == 0;
-}
-bool tf2(uint64_t k, uint64_t p, int top) {
-	uint128 sq, q;
-	multiply64to128(k, p, q);
-	Lsh(q);
-	Inc(q);
-
-	// Do the TF math: Starting with 1, repeatedly square,
-	//  remove the top bit of the exponent and if 1 multiply squared value by 2,
-	//  then compute mod Q.
-	sq.Lo = 1; sq.Hi = 0;
-	for (int b = top; b >= 0; b--) {
-		bool bb = (p & (1l << b)) != 0;
-		if (bb) {
-			Lsh(sq);
-		}
-		SqMod2(sq, q);
+		SqMod(sq, q, bb);
 	}
 	// If the result is 1, then we found a factor.
 	return sq.Lo == 1 && sq.Hi == 0;
@@ -555,7 +347,7 @@ void main() {
 	int top = int(findMSB((p)));
 	for (int i = 0; i < kl; i++) {
 		uint64_t k = klist[i];
-		if (tf2(k, p, top)) {
+		if (tf(k, p, top)) {
 			Found = k;
 		}
 	}
