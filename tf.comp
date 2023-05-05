@@ -44,6 +44,10 @@ struct uint128 {
 struct uint256 {
 	uint128 H, L;
 };
+struct uint192 {
+	uint64_t H;
+	uint128 L;
+};
 
 void Set(inout uint256 A, uint128 B) {
 	A.L = B;
@@ -63,6 +67,13 @@ void Lsh(inout uint256 A) {
 	Lsh(A.H);
 	A.H.Lo |= c >> 63;
 }
+void Lsh(inout uint192 A) {
+	
+	uint64_t c = A.L.Hi & (uint64_t(1) << 63);
+	Lsh(A.L);
+	A.H <<= 1;
+	A.H |= c >> 63;
+}
 
 void Rsh(inout uint128 A) {
 	uint64_t b = A.Hi & 1l;
@@ -81,6 +92,12 @@ int Cmp(uint128 A, uint128 B) {
 	if (A.Hi > B.Hi || (A.Hi == B.Hi && A.Lo > B.Lo)) {return 1;}
 	if (A.Hi < B.Hi || (A.Hi == B.Hi && A.Lo < B.Lo)) {return -1;}
 	return 0;
+}
+int Cmp(uint192 A, uint128 B) {
+	if (A.H != 0) {
+		return 1;
+	}
+	return Cmp(A.L, B);
 }
 int Cmp(uint256 A, uint128 B) {
 	if (A.H.Hi != 0 || A.H.Lo != 0) {
@@ -121,6 +138,18 @@ void Sub(inout uint256 A, uint256 B) {
 	A.H.Lo = x;
 
 	A.H.Hi = A.H.Hi - (B.H.Hi + C);
+}
+void Sub(inout uint192 A, uint192 B) {
+	uint64_t x = A.L.Lo - B.L.Lo;
+	uint C = 0;
+	if (x > A.L.Lo) {C++;}
+	A.L.Lo = x;
+	x = A.L.Hi - (B.L.Hi + C);
+	C = 0;
+	if (x > A.L.Hi) {C++;} 
+	A.L.Hi = x;
+
+	A.H = A.H - (B.H + C);
 }
 void Add(inout uint128 A, uint128 B) {
 	uint64_t x = A.Lo + B.Lo;
@@ -169,6 +198,46 @@ void Sq256(uint128 A, inout uint256 X) {
 		X.H.Hi++;
 	}
 }
+void Sq192(uint128 A, inout uint192 X) {	
+	uint128 TT;
+
+	multiply64to128(A.Hi, A.Hi, TT);
+	multiply64to128(A.Lo, A.Lo, X.L);
+	X.H = TT.Lo;
+
+	uint128 T;
+	multiply64to128(A.Hi, A.Lo, T);
+	Lsh(T);
+
+	X.L.Hi += T.Lo;
+	if (X.L.Hi < T.Lo) {
+		X.H++;
+	}
+	X.H += T.Hi;
+}
+void Mul192(uint128 A, uint128 B, inout uint192 X) {
+	uint128 TT;
+	multiply64to128(A.Hi, B.Hi, TT);
+	multiply64to128(A.Lo, B.Lo, X.L);
+	X.H = TT.Lo;
+
+	uint128 T;
+	multiply64to128(B.Hi, A.Lo, T);
+
+	X.L.Hi += T.Lo;
+	if (X.L.Hi < T.Lo) {
+		X.H++;
+	}
+	X.H += T.Hi;
+
+	multiply64to128(A.Hi, B.Lo, T);
+
+	X.L.Hi += T.Lo;
+	if (X.L.Hi < T.Lo) {
+		X.H++;
+	}
+	X.H += T.Hi;
+}
 void Mul256(uint128 A, uint128 B, inout uint256 X) {
 	multiply64to128(A.Hi, B.Hi, X.H);
 	multiply64to128(A.Lo, B.Lo, X.L);
@@ -206,6 +275,10 @@ const	double p192 = 6277101735386680763835789423207666416102355444464034512896.0
 double toF(uint128 A) {
 	return double(A.Lo) + double(A.Hi) * p64;
 }
+double toF(uint192 A) {
+
+	return double(A.L.Lo) + double(A.L.Hi)*p64 + double(A.H)*p128;
+}
 double toF(uint256 A) {
 
 	return double(A.L.Lo) + double(A.L.Hi)*p64 + double(A.H.Lo)*p128 + double(A.H.Hi)*p192;
@@ -216,7 +289,7 @@ void fto128(double f, out uint128 A) {
 }
 
 // Floating point version
-void SqMod(inout uint128 A, uint128 Q, bool doshift) {
+void SqMod(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	uint256 X, Y;
 	uint128 D;
 
@@ -224,10 +297,6 @@ void SqMod(inout uint128 A, uint128 Q, bool doshift) {
 	if (doshift) {
 		Lsh(X);
 	}
-
-	// Make our 1/q just a tiny bit too small, so we don't over estimate,
-	// but not so small as to need extra passes.
-	double qinv = 0.9999999999999 / toF(Q);
 
 	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
 
@@ -249,6 +318,59 @@ void SqMod(inout uint128 A, uint128 Q, bool doshift) {
 	if (i > 3) {Debug[1]++;}
 	A = X.L;
 }
+// Floating point version
+void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
+	uint192 X, Y;
+	uint128 D;
+
+	Sq192(A, X);
+	if (doshift) {
+		Lsh(X);
+	}
+
+	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
+
+	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
+	// Always guess D a little low, and refine our guess as we get closer.
+	// normally takes 2 passes.
+	while (i < 10 && Cmp(X, Q) > 0) {
+
+		double x = toF(X);
+		fto128(x*qinv, D);
+		if (Zero(D)) {
+			D.Lo = 1;
+		}		
+		Mul192(D, Q, Y);
+
+		Sub(X, Y);
+		i++;
+	}
+	if (i > 3) {Debug[1]++;}
+	A = X.L;
+}
+
+
+bool tf(uint64_t k, uint64_t p, int top) {
+	uint128 sq, q;
+	multiply64to128(k, p, q);
+	Lsh(q);
+	Inc(q);
+
+	// Make our 1/q just a tiny bit too small, so we don't over estimate,
+	// but not so small as to need extra passes.
+	double qinv = 0.9999999999999 / toF(q);
+
+	// Do the TF math: Starting with 1, repeatedly square,
+	//  remove the top bit of the exponent and if 1 multiply squared value by 2,
+	//  then compute mod Q.
+	sq.Lo = 1; sq.Hi = 0;
+	for (int b = top; b >= 0; b--) {
+		bool bb = (p & (1l << b)) != 0;
+		SqMod9(sq, q, bb, qinv);
+	}
+	// If the result is 1, then we found a factor.
+	return sq.Lo == 1 && sq.Hi == 0;
+}
 
 //
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
@@ -266,23 +388,6 @@ bool sieve(uint p2, uint64_t k, int low, uint count) {
 	return true;
 }
 
-bool tf(uint64_t k, uint64_t p, int top) {
-	uint128 sq, q;
-	multiply64to128(k, p, q);
-	Lsh(q);
-	Inc(q);
-
-	// Do the TF math: Starting with 1, repeatedly square,
-	//  remove the top bit of the exponent and if 1 multiply squared value by 2,
-	//  then compute mod Q.
-	sq.Lo = 1; sq.Hi = 0;
-	for (int b = top; b >= 0; b--) {
-		bool bb = (p & (1l << b)) != 0;
-		SqMod(sq, q, bb);
-	}
-	// If the result is 1, then we found a factor.
-	return sq.Lo == 1 && sq.Hi == 0;
-}
 void init(uint k) {
 
 	// Use 4620 threads to initialize this table in parallel.
