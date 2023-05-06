@@ -30,9 +30,7 @@ layout(binding = 0) buffer buf
 	readonly uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Debug[2];     // output only used for debugging
-	readonly uint        Nsp;
 	readonly uint        Init;    // If this is 0, then we setup our tables once.
-	readonly uint        sp[100]; // These are passed from the CPU.
 	uint        k4620[4620][4620];  // GPU generates this during init=0 call
 };
 
@@ -370,68 +368,47 @@ bool tf(uint64_t k, uint64_t p, int top) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-bool sieve(uint p2, uint64_t k, int low, uint count) {
 
-	// start with 13 if pre-filtered with k4620, or 7 if using k60
-	for (int i = low; i < (low+count); i++) {
-		uint N = sp[i];
-		uint  r = (((p2 % N) * uint(k % N)) +1) % N;
-
-		if (r == 0) {return false;}
-	}
-	return true;
-}
-bool sieve2(uint64_t k) {
+bool sieve(uint64_t k) {
 	uint  r;
 	const uint p2 = uint(P * 2);
 
-	r = (((p2 % 13) * uint(k % 13)) +1) % 13;
-	if (r == 0) {return false;}
-	r = (((p2 % 17) * uint(k % 17)) +1) % 17;
-	if (r == 0) {return false;}
-	r = (((p2 % 19) * uint(k % 19)) +1) % 19;
-	if (r == 0) {return false;}
-	r = (((p2 % 23) * uint(k % 23)) +1) % 23;
-	if (r == 0) {return false;}
-	r = (((p2 % 29) * uint(k % 29)) +1) % 29;
-	if (r == 0) {return false;}
-	r = (((p2 % 31) * uint(k % 31)) +1) % 31;
-	if (r == 0) {return false;}
-	r = (((p2 % 37) * uint(k % 37)) +1) % 37;
-	if (r == 0) {return false;}
-	r = (((p2 % 41) * uint(k % 41)) +1) % 41;
-	if (r == 0) {return false;}
-	r = (((p2 % 43) * uint(k % 43)) +1) % 43;
-	if (r == 0) {return false;}
-	r = (((p2 % 47) * uint(k % 47)) +1) % 47;
-	if (r == 0) {return false;}
-	r = (((p2 % 53) * uint(k % 53)) +1) % 53;
-	if (r == 0) {return false;}
-	r = (((p2 % 59) * uint(k % 59)) +1) % 59;
-	if (r == 0) {return false;}
-	r = (((p2 % 61) * uint(k % 61)) +1) % 61;
-	if (r == 0) {return false;}
-	r = (((p2 % 67) * uint(k % 67)) +1) % 67;
-	if (r == 0) {return false;}
-	r = (((p2 % 71) * uint(k % 71)) +1) % 71;
-	if (r == 0) {return false;}
-	r = (((p2 % 73) * uint(k % 73)) +1) % 73;
-	if (r == 0) {return false;}
+	r = (((p2 % 13) * uint(k % 13)) +1) % 13;	if (r == 0) {return false;}
+	r = (((p2 % 17) * uint(k % 17)) +1) % 17;	if (r == 0) {return false;}
+	r = (((p2 % 19) * uint(k % 19)) +1) % 19;	if (r == 0) {return false;}
+	r = (((p2 % 23) * uint(k % 23)) +1) % 23;	if (r == 0) {return false;}
+	r = (((p2 % 29) * uint(k % 29)) +1) % 29;	if (r == 0) {return false;}
+	r = (((p2 % 31) * uint(k % 31)) +1) % 31;	if (r == 0) {return false;}
+	r = (((p2 % 37) * uint(k % 37)) +1) % 37;	if (r == 0) {return false;}
+	r = (((p2 % 41) * uint(k % 41)) +1) % 41;	if (r == 0) {return false;}
+	r = (((p2 % 43) * uint(k % 43)) +1) % 43;	if (r == 0) {return false;}
+	r = (((p2 % 47) * uint(k % 47)) +1) % 47;	if (r == 0) {return false;}
+
+	r = (((p2 % 53) * uint(k % 53)) +1) % 53;	if (r == 0) {return false;}
+	r = (((p2 % 59) * uint(k % 59)) +1) % 59;	if (r == 0) {return false;}
+	r = (((p2 % 61) * uint(k % 61)) +1) % 61;	if (r == 0) {return false;}
+	r = (((p2 % 67) * uint(k % 67)) +1) % 67;	if (r == 0) {return false;}
+	return true;
+
+	r = (((p2 % 71) * uint(k % 71)) +1) % 71;	if (r == 0) {return false;}
+	r = (((p2 % 73) * uint(k % 73)) +1) % 73;	if (r == 0) {return false;}
+
+	r = (((p2 % 79) * uint(k % 79)) +1) % 79;	if (r == 0) {return false;}
+	r = (((p2 % 83) * uint(k % 83)) +1) % 83;	if (r == 0) {return false;}
+	r = (((p2 % 89) * uint(k % 89)) +1) % 89;	if (r == 0) {return false;}
+	r = (((p2 % 97) * uint(k % 97)) +1) % 97;	if (r == 0) {return false;}
+
+	r = (((p2 % 101) * uint(k % 101)) +1) % 101;	if (r == 0) {return false;}
+	r = (((p2 % 103) * uint(k % 103)) +1) % 103;	if (r == 0) {return false;}
+	r = (((p2 % 107) * uint(k % 107)) +1) % 107;	if (r == 0) {return false;}
+	r = (((p2 % 109) * uint(k % 109)) +1) % 109;	if (r == 0) {return false;}
+	r = (((p2 % 113) * uint(k % 113)) +1) % 113;	if (r == 0) {return false;}
 
 	return true;
-	
-	r = (((p2 % 79) * uint(k % 79)) +1) % 79;
-	if (r == 0) {return false;}
-	r = (((p2 % 83) * uint(k % 83)) +1) % 83;
-	if (r == 0) {return false;}
-	r = (((p2 % 89) * uint(k % 89)) +1) % 89;
-	if (r == 0) {return false;}
-	r = (((p2 % 97) * uint(k % 97)) +1) % 97;
-	if (r == 0) {Debug[1]++;return false;}
-	return true;
 }
-bool sieve3(uint p2, uint64_t k, int low, uint count) {
+bool sieve3(uint64_t k) {
 	uint  r;
+	const uint p2 = uint(P * 2);
 
 	r = 1;
 	r *= (((p2 % 13) * uint(k % 13)) +1) % 13;
@@ -448,8 +425,6 @@ bool sieve3(uint p2, uint64_t k, int low, uint count) {
 	r *= (((p2 % 59) * uint(k % 59)) +1) % 59;
 	r *= (((p2 % 61) * uint(k % 61)) +1) % 61;
 	r *= (((p2 % 67) * uint(k % 67)) +1) % 67;
-	r *= (((p2 % 71) * uint(k % 71)) +1) % 71;
-	r *= (((p2 % 73) * uint(k % 73)) +1) % 73;
 
 	return r != 0;
 }
@@ -479,8 +454,8 @@ void main() {
 
 	const uint pm60 = uint(P % 4620l);
 	//const uint pm60 = uint(P % 60l);
-	const uint64_t p2 = P * 2;
-	const uint p2u = uint(p2);
+	const uint p2 = uint(P * 2);
+	//const uint p2u = uint(p2);
 	const uint64_t p = P;
 	uint64_t klist[NK];
 	uint64_t kbase = K + I * NK;  // our chunk of k-values
@@ -499,13 +474,15 @@ void main() {
 			klist[kl++] = k;
 		}
 	}
+
 	// shorten the list by sking sieve() to check a range of small primes.
 	// The stage after this is fast enough that the time taken to seive is almost not worth it.
 	int kl2 = kl;
 	kl = 0;
 	for (int i = 0; i < kl2; i++) {
 		uint64_t k = klist[i];
-		if (sieve2(k))
+
+		if (sieve(k))
 		{
 			klist[kl++] = k;
 		}
