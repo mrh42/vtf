@@ -163,7 +163,6 @@ bool Zero(uint128 A) {
 }
 //
 // Used to compute Q = 2*P*K+1 for each K, and for the 256 multiplies below.
-// XXX: need to create multiply64to96
 //
 void multiply64to128(uint64_t lhs, uint64_t rhs, inout uint128 r) {
 
@@ -382,7 +381,78 @@ bool sieve(uint p2, uint64_t k, int low, uint count) {
 	}
 	return true;
 }
+bool sieve2(uint64_t k) {
+	uint  r;
+	const uint p2 = uint(P * 2);
 
+	r = (((p2 % 13) * uint(k % 13)) +1) % 13;
+	if (r == 0) {return false;}
+	r = (((p2 % 17) * uint(k % 17)) +1) % 17;
+	if (r == 0) {return false;}
+	r = (((p2 % 19) * uint(k % 19)) +1) % 19;
+	if (r == 0) {return false;}
+	r = (((p2 % 23) * uint(k % 23)) +1) % 23;
+	if (r == 0) {return false;}
+	r = (((p2 % 29) * uint(k % 29)) +1) % 29;
+	if (r == 0) {return false;}
+	r = (((p2 % 31) * uint(k % 31)) +1) % 31;
+	if (r == 0) {return false;}
+	r = (((p2 % 37) * uint(k % 37)) +1) % 37;
+	if (r == 0) {return false;}
+	r = (((p2 % 41) * uint(k % 41)) +1) % 41;
+	if (r == 0) {return false;}
+	r = (((p2 % 43) * uint(k % 43)) +1) % 43;
+	if (r == 0) {return false;}
+	r = (((p2 % 47) * uint(k % 47)) +1) % 47;
+	if (r == 0) {return false;}
+	r = (((p2 % 53) * uint(k % 53)) +1) % 53;
+	if (r == 0) {return false;}
+	r = (((p2 % 59) * uint(k % 59)) +1) % 59;
+	if (r == 0) {return false;}
+	r = (((p2 % 61) * uint(k % 61)) +1) % 61;
+	if (r == 0) {return false;}
+	r = (((p2 % 67) * uint(k % 67)) +1) % 67;
+	if (r == 0) {return false;}
+	r = (((p2 % 71) * uint(k % 71)) +1) % 71;
+	if (r == 0) {return false;}
+	r = (((p2 % 73) * uint(k % 73)) +1) % 73;
+	if (r == 0) {return false;}
+
+	return true;
+	
+	r = (((p2 % 79) * uint(k % 79)) +1) % 79;
+	if (r == 0) {return false;}
+	r = (((p2 % 83) * uint(k % 83)) +1) % 83;
+	if (r == 0) {return false;}
+	r = (((p2 % 89) * uint(k % 89)) +1) % 89;
+	if (r == 0) {return false;}
+	r = (((p2 % 97) * uint(k % 97)) +1) % 97;
+	if (r == 0) {Debug[1]++;return false;}
+	return true;
+}
+bool sieve3(uint p2, uint64_t k, int low, uint count) {
+	uint  r;
+
+	r = 1;
+	r *= (((p2 % 13) * uint(k % 13)) +1) % 13;
+	r *= (((p2 % 17) * uint(k % 17)) +1) % 17;
+	r *= (((p2 % 19) * uint(k % 19)) +1) % 19;
+	r *= (((p2 % 23) * uint(k % 23)) +1) % 23;
+	r *= (((p2 % 29) * uint(k % 29)) +1) % 29;
+	r *= (((p2 % 31) * uint(k % 31)) +1) % 31;
+	r *= (((p2 % 37) * uint(k % 37)) +1) % 37;
+	r *= (((p2 % 41) * uint(k % 41)) +1) % 41;
+	r *= (((p2 % 43) * uint(k % 43)) +1) % 43;
+	r *= (((p2 % 47) * uint(k % 47)) +1) % 47;
+	r *= (((p2 % 53) * uint(k % 53)) +1) % 53;
+	r *= (((p2 % 59) * uint(k % 59)) +1) % 59;
+	r *= (((p2 % 61) * uint(k % 61)) +1) % 61;
+	r *= (((p2 % 67) * uint(k % 67)) +1) % 67;
+	r *= (((p2 % 71) * uint(k % 71)) +1) % 71;
+	r *= (((p2 % 73) * uint(k % 73)) +1) % 73;
+
+	return r != 0;
+}
 void init(uint k) {
 
 	// Use 4620 threads to initialize this table in parallel.
@@ -435,7 +505,8 @@ void main() {
 	kl = 0;
 	for (int i = 0; i < kl2; i++) {
 		uint64_t k = klist[i];
-		if (sieve(p2u, k, 2, Nsp)) {
+		if (sieve2(k))
+		{
 			klist[kl++] = k;
 		}
 	}
