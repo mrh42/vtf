@@ -370,7 +370,7 @@ uint Mod(uint X, uint b, double qinv) {
 	if (X == b) {X = 0;}
 	return X;
 }
-uint64_t Mod(uint64_t X, uint64_t b, double qinv) {
+uint64_t Mod(uint64_t X, uint b, double qinv) {
 
 	int i = 0;
 	while (i < 10 && X > b) {
@@ -435,48 +435,33 @@ bool tf(uint64_t k, uint64_t p, int top) {
 	// If the result is 1, then we found a factor.
 	return sq.Lo == 1 && sq.Hi == 0;
 }
+void init(uint k) {
+
+	// Use 4620 threads to initialize this table in parallel.
+	if (k < 4620) {
+		for (uint n = 0; n < 4620; n++) {
+			uint q = 2 * n * k + 1;
+			if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
+				k4620[n][k] = 0;
+			} else {
+				k4620[n][k] = 1;
+			}
+		}
+	}
+}
 
 //
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
-uint p2qmn(uint p2, uint64_t k, uint n) {
-	double ninv = Inv(double(n));
+bool p2qmn(uint p2, uint64_t k, uint n, double ninv) {
 
-	uint a = Mod(p2, n, ninv);
-	uint64_t b = Mod(k, uint64_t(n), ninv);
-	uint64_t r = Mod(a*b+1, n, ninv);
-	return uint(r);
+	uint a = p2 % n;
+	uint64_t b = Mod(k, n, ninv);
+	uint r = (a*uint(b)+1) % n;
+	return r == 0;
 }
-bool sieve(uint64_t k) {
-	uint  r;
-	const uint p2 = uint(P * 2);
 
-	r = p2qmn(p2, k, 13); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 17); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 19); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 23); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 29); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 31); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 37); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 41); 	if (r == 0) {return false;}
-	return true;
-}
-bool sieve2(uint64_t k) {
-	uint  r;
-	const uint p2 = uint(P * 2);
-
-	r = p2qmn(p2, k, 43); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 47); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 53); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 59); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 61); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 67); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 71); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 73); 	if (r == 0) {return false;}
-	r = p2qmn(p2, k, 79); 	if (r == 0) {return false;}
-	return true;
-}
 bool sieve3(uint64_t k) {
 	uint  r;
 	const uint p2 = uint(P * 2);
@@ -499,20 +484,32 @@ bool sieve3(uint64_t k) {
 
 	return r != 0;
 }
-void init(uint k) {
 
-	// Use 4620 threads to initialize this table in parallel.
-	if (k < 4620) {
-		for (uint n = 0; n < 4620; n++) {
-			uint q = 2 * n * k + 1;
-			if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
-				k4620[n][k] = 0;
-			} else {
-				k4620[n][k] = 1;
-			}
+const uint sp[50] = {13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107,
+	109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229,
+	233, 239, 241, 251, 257};
+const double spi[50] = {0.0769230769230692, 0.0588235294117588, 0.0526315789473632, 0.0434782608695609, 0.0344827586206862,
+	0.0322580645161258, 0.0270270270270243, 0.0243902439024366, 0.0232558139534860, 0.0212765957446787, 0.0188679245283000,
+	0.0169491525423712, 0.0163934426229492, 0.0149253731343269, 0.0140845070422521, 0.0136986301369849, 0.0126582278481000,
+	0.0120481927710831, 0.0112359550561787, 0.0103092783505144, 0.0099009900990089, 0.0097087378640767, 0.0093457943925224,
+	0.0091743119266046, 0.0088495575221230, 0.0078740157480307, 0.0076335877862588, 0.0072992700729920, 0.0071942446043158,
+	0.0067114093959725, 0.0066225165562907, 0.0063694267515917, 0.0061349693251528, 0.0059880239520952, 0.0057803468208087,
+	0.0055865921787704, 0.0055248618784525, 0.0052356020942403, 0.0051813471502585, 0.0050761421319792, 0.0050251256281402,
+	0.0047393364928905, 0.0044843049327350, 0.0044052863436119, 0.0043668122270738, 0.0042918454935618, 0.0041841004184096,
+	0.0041493775933606, 0.0039840637450195, 0.0038910505836572};
+
+bool sieve(uint p2, uint64_t k) {
+	for (int j = 0; j < 15; j++) {
+		uint n = sp[j];
+		double ninv = spi[j];
+
+		if (p2qmn(p2, k, n, ninv)) {
+			return false;
 		}
 	}
+	return true;
 }
+
 void main() {
 	// Which thread are we?
 
@@ -524,9 +521,7 @@ void main() {
 	}
 
 	const uint pm60 = uint(P % 4620l);
-	//const uint pm60 = uint(P % 60l);
 	const uint p2 = uint(P * 2);
-	//const uint p2u = uint(p2);
 	const uint64_t p = P;
 	uint64_t klist[NK];
 	uint64_t kbase = K + I * NK;  // our chunk of k-values
@@ -545,27 +540,32 @@ void main() {
 			klist[kl++] = k;
 		}
 	}
-
-	// shorten the list by sking sieve() to check a range of small primes.
-	// The stage after this is fast enough that the time taken to seive is almost not worth it.
-	int kl2 = kl;
+	// take out the composite values, shortening the list for the next pass.
+/*	int kl2 = kl;
 	kl = 0;
 	for (int i = 0; i < kl2; i++) {
 		uint64_t k = klist[i];
-
-		if (sieve(k))
-		{
+		if (sieve(p2, k)) {
 			klist[kl++] = k;
 		}
 	}
-	kl2 = kl;
-	kl = 0;
-	for (int i = 0; i < kl2; i++) {
-		uint64_t k = klist[i];
+*/
+	// make a few passes thru the list sieving out values that are multiples of small primes.
+	for (int pass = 0; pass < 3; pass++) {
+		int ppp = 7;
+		for (int j = 0; j < ppp; j++) {
+			int index = j + ppp*pass;
+			uint n = sp[index];
+			double ninv = spi[index];
 
-		if (sieve2(k))
-		{
-			klist[kl++] = k;
+			int kl2 = kl;
+			kl = 0;
+			for (int i = 0; i < kl2; i++) {
+				uint64_t k = klist[i];
+				if (!p2qmn(p2, k, n, ninv)) {
+					klist[kl++] = k;
+				}
+			}
 		}
 	}
 
@@ -573,7 +573,7 @@ void main() {
 	       	Debug[0] = kl;  // just for debugging
 	}
 	//return;
-	// kl should be about 0.06*NK to about 0.1*NK at this point.
+
 	int top = int(findMSB((p)));
 	for (int i = 0; i < kl; i++) {
 		uint64_t k = klist[i];
