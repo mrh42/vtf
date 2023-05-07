@@ -353,6 +353,38 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	A = X.L;
 }
 
+double Inv(double a) {
+	return 0.9999999999999 / a;
+}
+
+uint Mod(uint X, uint b, double qinv) {
+
+	int i = 0;
+	while (i < 10 && X > b) {
+		uint D = uint(double(X) * qinv);
+		if (D == 0) {D = 1;}
+		uint Y = D * b;
+		X -= Y;
+		i++;
+	}
+	if (X == b) {X = 0;}
+	return X;
+}
+uint64_t Mod(uint64_t X, uint64_t b, double qinv) {
+
+	int i = 0;
+	while (i < 10 && X > b) {
+		uint64_t D = uint64_t(double(X) * qinv);
+		if (D == 0) {D = 1;}
+		uint64_t Y = D * b;
+		X -= Y;
+		i++;
+	}
+	//if (i > 1) Debug[1]++;
+	if (X == b) {X = 0;}
+	return X;
+}
+
 // for checking with small primes.  Not fast enough yet.
 bool Modz(uint128 A, uint64_t Q) {
 	uint128 X, Y;
@@ -408,32 +440,78 @@ bool tf(uint64_t k, uint64_t p, int top) {
 // We want to know if Q=2*P*K+1 might be prime.  Test it with some small primes to determine if it is composite.
 // We would test Q == 0 mod N, but Q is too big for uint64.  So instead we test (((2*P)modN * KmodN) + 1) == 0 modN
 //
+uint p2qmn(uint p2, uint64_t k, uint n) {
+	double ninv = Inv(double(n));
 
+	uint a = Mod(p2, n, ninv);
+	uint64_t b = Mod(k, uint64_t(n), ninv);
+	uint64_t r = Mod(a*b+1, n, ninv);
+	return uint(r);
+}
 bool sieve(uint64_t k) {
 	uint  r;
 	const uint p2 = uint(P * 2);
 
-	r = (((p2 % 13) * uint(k % 13)) +1) % 13;	if (r == 0) {return false;}
-	r = (((p2 % 17) * uint(k % 17)) +1) % 17;	if (r == 0) {return false;}
-	r = (((p2 % 19) * uint(k % 19)) +1) % 19;	if (r == 0) {return false;}
-	r = (((p2 % 23) * uint(k % 23)) +1) % 23;	if (r == 0) {return false;}
-	r = (((p2 % 29) * uint(k % 29)) +1) % 29;	if (r == 0) {return false;}
-	r = (((p2 % 31) * uint(k % 31)) +1) % 31;	if (r == 0) {return false;}
-	r = (((p2 % 37) * uint(k % 37)) +1) % 37;	if (r == 0) {return false;}
-	r = (((p2 % 41) * uint(k % 41)) +1) % 41;	if (r == 0) {return false;}
-	r = (((p2 % 43) * uint(k % 43)) +1) % 43;	if (r == 0) {return false;}
-	r = (((p2 % 47) * uint(k % 47)) +1) % 47;	if (r == 0) {return false;}
-
-	r = (((p2 % 53) * uint(k % 53)) +1) % 53;	if (r == 0) {return false;}
-	r = (((p2 % 59) * uint(k % 59)) +1) % 59;	if (r == 0) {return false;}
-	r = (((p2 % 61) * uint(k % 61)) +1) % 61;	if (r == 0) {return false;}
-	r = (((p2 % 67) * uint(k % 67)) +1) % 67;	if (r == 0) {return false;}
-
-	r = (((p2 % 71) * uint(k % 71)) +1) % 71;	if (r == 0) {return false;}
-	r = (((p2 % 73) * uint(k % 73)) +1) % 73;	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 13); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 17); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 19); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 23); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 29); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 31); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 37); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 41); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 43); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 47); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 53); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 59); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 61); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 67); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 71); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 73); 	if (r == 0) {return false;}
+	r = p2qmn(p2, k, 79); 	if (r == 0) {return false;}
+	return true;
+/*
+	uint64_t kmn = Mod(k, 13);
+	r = (((p2 % 13) * uint(kmn)) +1) % 13;	if (r == 0) {return false;}
+	kmn = Mod(k, 17);
+	r = (((p2 % 17) * uint(kmn)) +1) % 17;	if (r == 0) {return false;}
+	kmn = Mod(k, 19);
+	r = (((p2 % 19) * uint(kmn)) +1) % 19;	if (r == 0) {return false;}
+	kmn = Mod(k, 23);
+	r = (((p2 % 23) * uint(kmn)) +1) % 23;	if (r == 0) {return false;}
+	kmn = Mod(k, 29);
+	r = (((p2 % 29) * uint(kmn)) +1) % 29;	if (r == 0) {return false;}
+	kmn = Mod(k, 31);
+	r = (((p2 % 31) * uint(kmn)) +1) % 31;	if (r == 0) {return false;}
+	kmn = Mod(k, 37);
+	r = (((p2 % 37) * uint(kmn)) +1) % 37;	if (r == 0) {return false;}
+	kmn = Mod(k, 41);
+	r = (((p2 % 41) * uint(kmn)) +1) % 41;	if (r == 0) {return false;}
+	kmn = Mod(k, 43);
+	r = (((p2 % 43) * uint(kmn)) +1) % 43;	if (r == 0) {return false;}
+	kmn = Mod(k, 47);
+	r = (((p2 % 47) * uint(kmn)) +1) % 47;	if (r == 0) {return false;}
+	kmn = Mod(k, 53);
+	r = (((p2 % 53) * uint(kmn)) +1) % 53;	if (r == 0) {return false;}
+	kmn = Mod(k, 59);
+	r = (((p2 % 59) * uint(kmn)) +1) % 59;	if (r == 0) {return false;}
+	kmn = Mod(k, 61);
+	r = (((p2 % 61) * uint(kmn)) +1) % 61;	if (r == 0) {return false;}
+	kmn = Mod(k, 67);
+	r = (((p2 % 67) * uint(kmn)) +1) % 67;	if (r == 0) {return false;}
+	kmn = Mod(k, 71);
+	r = (((p2 % 71) * uint(kmn)) +1) % 71;	if (r == 0) {return false;}
+	kmn = Mod(k, 73);
+	r = (((p2 % 73) * uint(kmn)) +1) % 73;	if (r == 0) {return false;}
+	kmn = Mod(k, 79);
+	r = (((p2 % 79) * uint(kmn)) +1) % 79;	if (r == 0) {return false;}
 	return true;
 
-	r = (((p2 % 79) * uint(k % 79)) +1) % 79;	if (r == 0) {return false;}
+
+
+
+
+
 	r = (((p2 % 83) * uint(k % 83)) +1) % 83;	if (r == 0) {return false;}
 	r = (((p2 % 89) * uint(k % 89)) +1) % 89;	if (r == 0) {return false;}
 	r = (((p2 % 97) * uint(k % 97)) +1) % 97;	if (r == 0) {return false;}
@@ -445,6 +523,7 @@ bool sieve(uint64_t k) {
 	r = (((p2 % 113) * uint(k % 113)) +1) % 113;	if (r == 0) {return false;}
 
 	return true;
+*/
 }
 bool sieve3(uint64_t k) {
 	uint  r;
