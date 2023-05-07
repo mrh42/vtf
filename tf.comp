@@ -86,6 +86,13 @@ void Rsh(inout uint256 A) {
 	A.L.Hi |= b << 63;
 	
 }
+int Cmp(uint128 A, uint64_t B) {
+	if (A.Hi != 0) {return 1;}
+	if (A.Lo > B) {return 1;}
+	if (A.Lo < B) {return -1;}
+	return 0;
+	
+}
 int Cmp(uint128 A, uint128 B) {
 	if (A.Hi > B.Hi || (A.Hi == B.Hi && A.Lo > B.Lo)) {return 1;}
 	if (A.Hi < B.Hi || (A.Hi == B.Hi && A.Lo < B.Lo)) {return -1;}
@@ -177,7 +184,12 @@ void multiply64to128(uint64_t lhs, uint64_t rhs, inout uint128 r) {
 	r.Hi = upper;
 	r.Lo = (cross << 32) | (lo_lo & 0xFFFFFFFFul);
 }
-
+void Mul128(uint128 A, uint64_t B, inout uint128 X) {
+	multiply64to128(A.Lo, B, X);
+	uint128 T;
+	multiply64to128(A.Hi, B, T);
+	X.Hi += T.Lo;
+}
 void Sq256(uint128 A, inout uint256 X) {
 	multiply64to128(A.Hi, A.Hi, X.H);
 	multiply64to128(A.Lo, A.Lo, X.L);
@@ -325,7 +337,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
 	// Always guess D a little low, and refine our guess as we get closer.
 	// normally takes 2 passes.
-	while (i < 10 && Cmp(X, Q) > 0) {
+	while (i < 10 && Cmp(X, Q) > 0) {  // XXX: maybe >=?
 
 		double x = toF(X);
 		fto128(x*qinv, D);
@@ -339,6 +351,34 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	}
 	if (i > 3) {Debug[1]++;}
 	A = X.L;
+}
+
+// for checking with small primes.  Not fast enough yet.
+bool Modz(uint128 A, uint64_t Q) {
+	uint128 X, Y;
+	uint128 D;
+
+	X = A;
+	double qinv = 0.9999999999999 / double(Q);
+	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
+
+	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
+	// Always guess D a little low, and refine our guess as we get closer.
+	// normally takes 2 passes.
+	while (i < 10 && Cmp(X, Q) > 0) {
+
+		double x = toF(X);
+		fto128(x*qinv, D);
+		if (Zero(D)) {
+			D.Lo = 1;
+		}		
+		Mul128(D, Q, Y);
+
+		Sub(X, Y);
+		i++;
+	}
+	if (i > 3) {Debug[1]++;}
+	return Cmp(X, Q) == 0;
 }
 
 
@@ -388,10 +428,10 @@ bool sieve(uint64_t k) {
 	r = (((p2 % 59) * uint(k % 59)) +1) % 59;	if (r == 0) {return false;}
 	r = (((p2 % 61) * uint(k % 61)) +1) % 61;	if (r == 0) {return false;}
 	r = (((p2 % 67) * uint(k % 67)) +1) % 67;	if (r == 0) {return false;}
-	return true;
 
 	r = (((p2 % 71) * uint(k % 71)) +1) % 71;	if (r == 0) {return false;}
 	r = (((p2 % 73) * uint(k % 73)) +1) % 73;	if (r == 0) {return false;}
+	return true;
 
 	r = (((p2 % 79) * uint(k % 79)) +1) % 79;	if (r == 0) {return false;}
 	r = (((p2 % 83) * uint(k % 83)) +1) % 83;	if (r == 0) {return false;}
@@ -487,6 +527,37 @@ void main() {
 			klist[kl++] = k;
 		}
 	}
+/*
+	kl2 = kl;
+	kl = 0;
+	for (int i = 0; i < kl2; i++) {
+		uint64_t k = klist[i];
+		uint128 q;
+		multiply64to128(k, p, q);
+		Lsh(q);
+		Inc(q);
+
+		bool s = true;
+		//if (Modz(q, 13)) {s = false;}
+		//if (Modz(q, 17)) {s = false;}
+		//if (Modz(q, 19)) {s = false;}
+		//if (Modz(q, 23)) {s = false;}
+		//if (Modz(q, 29)) {s = false;}
+		//if (Modz(q, 31)) {s = false;}
+		//if (Modz(q, 37)) {s = false;}
+		//if (Modz(q, 41)) {s = false;}
+		//if (Modz(q, 43)) {s = false;}
+		//if (Modz(q, 71)) {s = false;}
+		//if (Modz(q, 73)) {s = false;}
+		//if (Modz(q, 79)) {s = false;}
+		
+		if (s)
+		{
+			klist[kl++] = k;
+		}
+	}
+*/
+
 	if (I == 0) {
 	       	Debug[0] = kl;  // just for debugging
 	}
