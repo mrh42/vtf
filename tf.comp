@@ -1,11 +1,11 @@
 #version 460
 //#extension GL_ARB_separate_shader_objects : enable
-#extension GL_ARB_gpu_shader_int64 : enable
+//#extension GL_ARB_gpu_shader_int64 : enable
 //#extension GL_EXT_debug_printf : enable
 //#extension GL_KHR_shader_subgroup_vote : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+//#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
 //#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
-//#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 
 //
@@ -104,6 +104,17 @@ int Cmp(uint192 A, uint128 B) {
 	}
 	return Cmp(A.L, B);
 }
+int Cmp(uint192 A, uint192 B) {
+	if (A.H == B.H) {
+		return Cmp(A.L, B.L);
+	}
+	if (A.H > B.H) {
+		return 1;
+	}
+	if (A.H < B.H) {
+		return -1;
+	}
+}
 int Cmp(uint256 A, uint128 B) {
 	if (A.H.Hi != 0 || A.H.Lo != 0) {
 		return 1;
@@ -166,10 +177,38 @@ void Add(inout uint128 A, uint128 B) {
 bool Zero(uint128 A) {
 	return A.Lo == 0 && A.Hi == 0;
 }
+
+void multiply64to128(uint64_t x, uint64_t y, out uint128 r)
+{
+	uint64_t lowbits = 0xfffffffful;
+	u64vec4 x4 = u64vec4(x >> 32, x & lowbits, x >> 32, x & lowbits);
+	u64vec4 y4 = u64vec4(y >> 32, y >> 32, y & lowbits, y & lowbits);
+	u64vec4 p = x4 * y4;
+
+	uint64_t middle = p[2] + (p[3] >> 32) + (p[1] & lowbits);
+	r.Hi = p[0] + (middle >> 32) + (p[1] >> 32);
+	r.Lo = (middle << 32) | (p[3] & lowbits);
+
+	/*
+	
+	uint64_t p11 = (x >> 32) * (y >> 32);
+	uint64_t p01 = (x & lowbits) * (y >> 32);
+	uint64_t p10 = (x >> 32) * (y & lowbits);
+	uint64_t p00 = (x & lowbits) * (y & lowbits);
+
+	// 64-bit product + two 32-bit values
+	uint64_t middle = p10 + (p00 >> 32) + (p01 & lowbits);
+
+	// 64-bit product + two 32-bit values
+	r.Hi = p11 + (middle >> 32) + (p01 >> 32);
+	r.Lo = (middle << 32) | (p00 & lowbits);
+	*/
+}
+
 //
 // Used to compute Q = 2*P*K+1 for each K, and for the 256 multiplies below.
 //
-void multiply64to128(uint64_t lhs, uint64_t rhs, inout uint128 r) {
+void multiply64to128x(uint64_t lhs, uint64_t rhs, inout uint128 r) {
 
 	/* First calculate all of the cross products. */
 	uint64_t lo_lo = (lhs & 0xFFFFFFFFul) * (rhs & 0xFFFFFFFFul);
@@ -220,6 +259,41 @@ void Sq192(uint128 A, inout uint192 X) {
 		X.H++;
 	}
 	X.H += T.Hi;
+}
+void Mul192x(uint128 A, uint128 B, out uint192 R) {
+	uint64_t lb = 0xfffffffful;
+	uint64_t x00 = (A.Lo & lb) * (B.Lo & lb);
+	uint64_t x01 = (A.Lo & lb) * (B.Lo >> 32);
+	uint64_t x02 = (A.Lo & lb) * (B.Hi & lb);
+	uint64_t x10 = (A.Lo >> 32) * (B.Lo & lb);
+	uint64_t x11 = (A.Lo >> 32) * (B.Lo >> 32);
+	uint64_t x12 = (A.Lo >> 32) * (B.Hi & lb);
+	uint64_t x20 = (A.Hi & lb) * (B.Lo & lb);
+	uint64_t x21 = (A.Hi & lb) * (B.Lo >> 32);
+	uint64_t x22 = (A.Hi & lb) * (B.Hi & lb);
+
+	uint64_t m = (x00 >> 32) + x01 + (x10 & lb);
+	uint64_t n = x02 + x11 + x20 + (x10 >> 32) + (m >> 32);
+	uint64_t o = x12 + x21 + (n >> 32);
+	R.L.Lo = (x00 & lb) | (m << 32);
+	R.L.Hi = (n & lb) | (o << 32);
+	R.H = (o >> 32) + x22;
+}
+void Sq192x(uint128 A, out uint192 R) {
+	uint64_t lb = 0xfffffffful;
+	uint64_t x00 = (A.Lo & lb) * (A.Lo & lb);
+	uint64_t x01 = (A.Lo & lb) * (A.Lo >> 32);
+	uint64_t x02 = (A.Lo & lb) * (A.Hi & lb);
+	uint64_t x11 = (A.Lo >> 32) * (A.Lo >> 32);
+	uint64_t x12 = (A.Lo >> 32) * (A.Hi & lb);
+	uint64_t x22 = (A.Hi & lb) * (A.Hi & lb);
+
+	uint64_t m = (x00 >> 32) + x01 + (x01 & lb);
+	uint64_t n = x02 + x11 + x02 + (x01 >> 32) + (m >> 32);
+	uint64_t o = x12 + x12  + (n >> 32);
+	R.L.Lo = (x00 & lb) | (m << 32);
+	R.L.Hi = (n & lb) | (o << 32);
+	R.H = (o >> 32) + x22;
 }
 void Mul192(uint128 A, uint128 B, inout uint192 X) {
 	X.H = A.Hi * B.Hi;
@@ -327,7 +401,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	uint192 X, Y;
 	uint128 D;
 
-	Sq192(A, X);
+	Sq192x(A, X);
 	if (doshift) {
 		Lsh(X);
 	}
@@ -340,16 +414,16 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	while (i < 10 && Cmp(X, Q) > 0) {  // XXX: maybe >=?
 
 		double x = toF(X);
-		fto128(x*qinv, D);
+		double xqi = x*qinv;
+		fto128(xqi, D);
 		if (Zero(D)) {
 			D.Lo = 1;
 		}		
-		Mul192(D, Q, Y);
-
+		Mul192x(D, Q, Y);
 		Sub(X, Y);
 		i++;
 	}
-	if (i > 3) {Debug[1]++;}
+	if (gl_GlobalInvocationID.x == 0 && i > 1) {Debug[1]++;}
 	A = X.L;
 }
 
@@ -362,11 +436,12 @@ uint Mod(uint X, uint b, double qinv) {
 	int i = 0;
 	while (i < 10 && X > b) {
 		uint D = uint(double(X) * qinv);
-		if (D == 0) {D = 1;}
+	       	if (D == 0) {D = 1;}
 		uint Y = D * b;
 		X -= Y;
 		i++;
 	}
+	//if (i > 1) {Debug[1]++;}
 	if (X == b) {X = 0;}
 	return X;
 }
@@ -422,7 +497,8 @@ bool tf(uint64_t k, uint64_t p, int top) {
 
 	// Make our 1/q just a tiny bit too small, so we don't over estimate,
 	// but not so small as to need extra passes.
-	double qinv = 0.9999999999999 / toF(q);
+	double qinv = 0.99999999999999 / toF(q);
+	//double qinv = 1.0 / toF(q);
 
 	// Do the TF math: Starting with 1, repeatedly square,
 	//  remove the top bit of the exponent and if 1 multiply squared value by 2,
@@ -457,8 +533,10 @@ void init(uint k) {
 bool p2qmn(uint p2, uint64_t k, uint n, double ninv) {
 
 	uint a = p2 % n;
-	uint64_t b = Mod(k, n, ninv);
-	uint r = (a*uint(b)+1) % n;
+	uint b = uint(Mod(k, n, ninv));
+	//uint b = uint(k % n);
+	uint r = (a*b+1) % n;
+	//uint r = mod(a*b+1, n);
 	return r == 0;
 }
 

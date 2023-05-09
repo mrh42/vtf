@@ -158,9 +158,8 @@ public:
 		gettimeofday(&t2, NULL);
 		double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
-		//fprintf(stdout, "gpu: %d in %f ms\n", i, elapsedTime);
-		//fprintf(stdout, "%f ms - %f K/sec\n", elapsedTime, 1000.0 * (np*NK) / (elapsedTime));
-		mrhNext(elapsedTime);
+		double pd = (100.0 * i) / loops;
+		mrhNext(elapsedTime, pd, i);
     
 		if (mrhDone) { break; }
 	}
@@ -169,12 +168,15 @@ public:
         cleanup();
     }
 
-	void mrhNext(double elapsedTime) {
+	void mrhNext(double elapsedTime, double pd, int i) {
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
-		printf("K: %ld P: %ld debug:[%ld,%ld] -- %.2f ms %.2fM/sec\n", p->K, p->P,
-		       p->Debug[0], p->Debug[1], elapsedTime, (np*NK) / (1000*elapsedTime));
+		{
+			printf("K: %ld (%.4f) P: %ld debug:[%ld,%ld] -- %.2f ms %.2fM/sec\n", p->K, pd, p->P,
+			       p->Debug[0], p->Debug[1], elapsedTime, (np*NK) / (1000*elapsedTime));
+		}
+
 		if (p->Found) {
 			printf("M%ld has factor with K=%ld E: %ld\n", p->P, p->Found, p->Debug[0]);
 			p->Found = 0;
