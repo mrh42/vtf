@@ -281,12 +281,15 @@ void Mul192x(uint128 A, uint128 B, out uint192 R) {
 }
 void Sq192x(uint128 A, out uint192 R) {
 	uint64_t lb = 0xfffffffful;
-	uint64_t x00 = (A.Lo & lb) * (A.Lo & lb);
-	uint64_t x01 = (A.Lo & lb) * (A.Lo >> 32);
-	uint64_t x02 = (A.Lo & lb) * (A.Hi & lb);
-	uint64_t x11 = (A.Lo >> 32) * (A.Lo >> 32);
-	uint64_t x12 = (A.Lo >> 32) * (A.Hi & lb);
-	uint64_t x22 = (A.Hi & lb) * (A.Hi & lb);
+	uint64_t alh = A.Lo >> 32;
+	uint64_t all = A.Lo & lb;
+	uint64_t ahl = A.Hi & lb;
+	uint64_t x00 = (all) * (all);
+	uint64_t x01 = (all) * (alh);
+	uint64_t x02 = (all) * (ahl);
+	uint64_t x11 = (alh) * (alh);
+	uint64_t x12 = (alh) * (ahl);
+	uint64_t x22 = (ahl) * (ahl);
 
 	uint64_t m = (x00 >> 32) + x01 + (x01 & lb);
 	uint64_t n = x02 + x11 + x02 + (x01 >> 32) + (m >> 32);
@@ -411,7 +414,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
 	// Always guess D a little low, and refine our guess as we get closer.
 	// normally takes 2 passes.
-	while (i < 10 && Cmp(X, Q) > 0) {  // XXX: maybe >=?
+	while (i < 10 && Cmp(X, Q) > 0) {
 
 		double x = toF(X);
 		double xqi = x*qinv;
@@ -423,28 +426,10 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 		Sub(X, Y);
 		i++;
 	}
-	if (gl_GlobalInvocationID.x == 0 && i > 1) {Debug[1]++;}
+	if (gl_GlobalInvocationID.x == 0 && i > 2) {Debug[1]++;}
 	A = X.L;
 }
 
-double Inv(double a) {
-	return 0.9999999999999 / a;
-}
-
-uint Mod(uint X, uint b, double qinv) {
-
-	int i = 0;
-	while (i < 10 && X > b) {
-		uint D = uint(double(X) * qinv);
-	       	if (D == 0) {D = 1;}
-		uint Y = D * b;
-		X -= Y;
-		i++;
-	}
-	//if (i > 1) {Debug[1]++;}
-	if (X == b) {X = 0;}
-	return X;
-}
 uint64_t Mod(uint64_t X, uint b, double qinv) {
 
 	int i = 0;
@@ -629,8 +614,8 @@ void main() {
 	}
 */
 	// make a few passes thru the list sieving out values that are multiples of small primes.
-	for (int pass = 0; pass < 3; pass++) {
-		int ppp = 7;
+	for (int pass = 0; pass < 4; pass++) {
+		int ppp = 5;
 		for (int j = 0; j < ppp; j++) {
 			int index = j + ppp*pass;
 			uint n = sp[index];
