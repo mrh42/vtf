@@ -6,7 +6,7 @@
 //#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
 //#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
-
+#extension GL_EXT_shader_atomic_int64: enable
 
 //
 // compile this file with: glslangValidator --target-env vulkan1.3 -V tf.comp
@@ -15,8 +15,8 @@
 // Installing the 'vulkan-amdgpu' package will result in a significant (2.5x) performance increase.
 //
 
-// each thread will consider this many k values
-#define NK 300
+// number of threads
+#define NP 8192*64*4
 
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -26,12 +26,14 @@ layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 // factor, but not all of the found factors.
 layout(binding = 0) buffer buf
 {	
-	readonly uint64_t    P;       // input from CPU side
-	readonly uint64_t    K;       // base K input from CPU side
+	uint64_t    P;       // input from CPU side
+	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
 	uint64_t    Debug[2];     // output only used for debugging
-	readonly uint        Init;    // If this is 0, then we setup our tables once.
+	uint        Init;    // If this is 0, then we setup our tables once.
 	uint        k4620[4620][4620];  // GPU generates this during init=0 call
+	uint     Kl;
+	uint64_t Klist[NP];
 };
 
 
@@ -78,6 +80,13 @@ void Rsh(inout uint128 A) {
 	A.Hi >>= 1;
 	A.Lo >>= 1;
 	A.Lo |= b << 63;
+}
+void Rsh(inout uint192 A) {
+	Rsh(A.L);
+	uint64_t b = A.H & 1l;
+	A.H >>= 1;
+	A.L.Hi |= b << 63;
+	
 }
 void Rsh(inout uint256 A) {
 	Rsh(A.L);
@@ -396,13 +405,15 @@ void SqMod(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 		Sub(X, Y);
 		i++;
 	}
-	if (i > 3) {Debug[1]++;}
+	//if (i > 3) {Debug[1]++;}
 	A = X.L;
 }
 // Floating point version
 void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	uint192 X, Y;
 	uint128 D;
+	uint192 QQ;
+	QQ.H = 0; QQ.L.Lo = Q.Lo; QQ.L.Hi = Q.Hi;
 
 	Sq192x(A, X);
 	if (doshift) {
@@ -414,19 +425,19 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
 	// Always guess D a little low, and refine our guess as we get closer.
 	// normally takes 2 passes.
+	//
 	while (i < 10 && Cmp(X, Q) > 0) {
-
 		double x = toF(X);
 		double xqi = x*qinv;
 		fto128(xqi, D);
 		if (Zero(D)) {
 			D.Lo = 1;
-		}		
+		}
 		Mul192x(D, Q, Y);
 		Sub(X, Y);
 		i++;
 	}
-	if (gl_GlobalInvocationID.x == 0 && i > 2) {Debug[1]++;}
+	//if (gl_GlobalInvocationID.x == 0 && i > 5) {Debug[1]++;}
 	A = X.L;
 }
 
@@ -445,34 +456,6 @@ uint64_t Mod(uint64_t X, uint b, double qinv) {
 	return X;
 }
 
-// for checking with small primes.  Not fast enough yet.
-bool Modz(uint128 A, uint64_t Q) {
-	uint128 X, Y;
-	uint128 D;
-
-	X = A;
-	double qinv = 0.9999999999999 / double(Q);
-	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
-
-	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
-	// Always guess D a little low, and refine our guess as we get closer.
-	// normally takes 2 passes.
-	while (i < 10 && Cmp(X, Q) > 0) {
-
-		double x = toF(X);
-		fto128(x*qinv, D);
-		if (Zero(D)) {
-			D.Lo = 1;
-		}		
-		Mul128(D, Q, Y);
-
-		Sub(X, Y);
-		i++;
-	}
-	if (i > 3) {Debug[1]++;}
-	return Cmp(X, Q) == 0;
-}
-
 
 bool tf(uint64_t k, uint64_t p, int top) {
 	uint128 sq, q;
@@ -483,6 +466,7 @@ bool tf(uint64_t k, uint64_t p, int top) {
 	// Make our 1/q just a tiny bit too small, so we don't over estimate,
 	// but not so small as to need extra passes.
 	double qinv = 0.99999999999999 / toF(q);
+	//double qinv =   0.9999999999999994 / toF(q);
 	//double qinv = 1.0 / toF(q);
 
 	// Do the TF math: Starting with 1, repeatedly square,
@@ -496,19 +480,47 @@ bool tf(uint64_t k, uint64_t p, int top) {
 	// If the result is 1, then we found a factor.
 	return sq.Lo == 1 && sq.Hi == 0;
 }
-void init(uint k) {
+bool tfx(uint64_t k, uint64_t p, int top) {
+	uint128 sq, q;
+	multiply64to128(k, p, q);
+	Lsh(q);
+	Inc(q);
 
-	// Use 4620 threads to initialize this table in parallel.
-	if (k < 4620) {
-		for (uint n = 0; n < 4620; n++) {
-			uint q = 2 * n * k + 1;
-			if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
-				k4620[n][k] = 0;
-			} else {
-				k4620[n][k] = 1;
+	uint192 X, Y;
+	X.H = 0; X.L.Hi = 0; X.L.Lo = 1;
+	uint128 D;
+	double qinv = 0.999999999999 / toF(q);
+	sq.Lo = 1; sq.Hi = 0;
+	int b = top;
+	int i = 0;
+	while (true) {
+		bool bb = (p & (1l << b)) != 0;
+		if (Cmp(X, q) > 0) {
+			double x = toF(X);
+			double xqi = x*qinv;
+			fto128(xqi, D);
+			if (Zero(D)) {
+				D.Lo = 1;
+			}		
+			Mul192x(D, q, Y);
+			Sub(X, Y);	
+		} else {
+			sq = X.L;
+			if (b < 0) {break;}
+			if (b >= 0) {
+				Sq192x(sq, X);
+				if (bb) {
+					Lsh(X);
+				}
+				b--;
 			}
 		}
+		i++;
 	}
+	//if (gl_GlobalInvocationID.x == 0 && i > 2) {Debug[1] = i;}
+       
+	// If the result is 1, then we found a factor.
+	return sq.Lo == 1 && sq.Hi == 0;
 }
 
 //
@@ -520,8 +532,9 @@ bool p2qmn(uint p2, uint64_t k, uint n, double ninv) {
 	uint a = p2 % n;
 	uint b = uint(Mod(k, n, ninv));
 	//uint b = uint(k % n);
+	//uint b = uint(mod(k, n));
 	uint r = (a*b+1) % n;
-	//uint r = mod(a*b+1, n);
+
 	return r == 0;
 }
 
@@ -562,7 +575,7 @@ const double spi[50] = {0.0769230769230692, 0.0588235294117588, 0.05263157894736
 	0.0041493775933606, 0.0039840637450195, 0.0038910505836572};
 
 bool sieve(uint p2, uint64_t k) {
-	for (int j = 0; j < 15; j++) {
+	for (int j = 0; j < 13; j++) {
 		uint n = sp[j];
 		double ninv = spi[j];
 
@@ -571,6 +584,21 @@ bool sieve(uint p2, uint64_t k) {
 		}
 	}
 	return true;
+}
+
+void init(uint k) {
+
+	// Use 4620 threads to initialize this table in parallel.
+	if (k < 4620) {
+		for (uint n = 0; n < 4620; n++) {
+			uint q = 2 * n * k + 1;
+			if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
+				k4620[n][k] = 0;
+			} else {
+				k4620[n][k] = 1;
+			}
+		}
+	}
 }
 
 void main() {
@@ -586,62 +614,43 @@ void main() {
 	const uint pm60 = uint(P % 4620l);
 	const uint p2 = uint(P * 2);
 	const uint64_t p = P;
-	uint64_t klist[NK];
-	uint64_t kbase = K + I * NK;  // our chunk of k-values
 
-	// we start with NK - k-values to test, first loop will remove 80%,
-	// the next loops will remove more, for about about 95% total.
-	// leaving a short list to test further
-	// the first loop uses a matrix from the cpu to eliminate p,k combinations that produce q=2pk+1,
-	// that are divisible by a few small primes.
-	int kl = 0;
-	for (uint64_t k = kbase; k < kbase + NK; k++) {
-		uint km = uint(k%4620l);
-
-		if (k4620[pm60][km] == 1)
-		{
-			klist[kl++] = k;
-		}
-	}
-	// take out the composite values, shortening the list for the next pass.
-/*	int kl2 = kl;
-	kl = 0;
-	for (int i = 0; i < kl2; i++) {
-		uint64_t k = klist[i];
-		if (sieve(p2, k)) {
-			klist[kl++] = k;
-		}
-	}
-*/
-	// make a few passes thru the list sieving out values that are multiples of small primes.
-	for (int pass = 0; pass < 4; pass++) {
-		int ppp = 5;
-		for (int j = 0; j < ppp; j++) {
-			int index = j + ppp*pass;
-			uint n = sp[index];
-			double ninv = spi[index];
-
-			int kl2 = kl;
-			kl = 0;
-			for (int i = 0; i < kl2; i++) {
-				uint64_t k = klist[i];
-				if (!p2qmn(p2, k, n, ninv)) {
-					klist[kl++] = k;
-				}
+	//
+	// in this invocation, grab a K value to test, if is passes add it to the list
+	// for the next invocation.  do this enough times so the list is nearly full.
+	// we can't easily completely fill the list, since all threads are doing this in
+	// parallel.  we don't want to test a K value, then determine the list is full.
+	//
+	if (Init == 1)
+	{
+		for (int c = 0; c < 7; c++) {
+			uint64_t k = atomicAdd(K, 1);
+			uint km = uint(k%4620l);
+			if (k4620[pm60][km] == 1 && sieve(p2, k))
+			{
+				uint nn = atomicAdd(Kl, 1);
+				//if (nn >= NP) {return;}
+				Klist[nn] = k;
 			}
 		}
+		return;
 	}
-
-	if (I == 0) {
-	       	Debug[0] = kl;  // just for debugging
-	}
-	//return;
-
-	int top = int(findMSB((p)));
-	for (int i = 0; i < kl; i++) {
-		uint64_t k = klist[i];
-		if (tf(k, p, top)) {
-			Found = k;
+	//
+	// in this invocation, each thread will look at one value from the list generated in the previous pass.
+	// we probably have too many threads, those can just return.
+	//
+	if (Init == 2) {
+		uint i = I;
+		if (i < Kl) {
+			int top = int(findMSB((p)));
+			uint64_t k = Klist[i];
+			if (k == 0) {Debug[1]++;}
+			if (tf(k, p, top)) {
+				Found = k;
+				atomicAdd(Debug[1], 1);
+			}
 		}
+		return;
 	}
+
 }
