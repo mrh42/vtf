@@ -6,7 +6,7 @@
 //#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
 //#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
-#extension GL_EXT_shader_atomic_int64: enable
+//#extension GL_EXT_shader_atomic_int64: enable
 
 //
 // compile this file with: glslangValidator --target-env vulkan1.3 -V tf.comp
@@ -29,9 +29,10 @@ layout(binding = 0) buffer buf
 	uint64_t    P;       // input from CPU side
 	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
-	uint64_t    Debug[2];     // output only used for debugging
+	uint        Debug[2];     // output only used for debugging
 	uint        Init;    // If this is 0, then we setup our tables once.
 	uint        k4620[4620][4620];  // GPU generates this during init=0 call
+	uint     Kn;
 	uint     Kl;
 	uint64_t Klist[NP];
 };
@@ -624,13 +625,14 @@ void main() {
 	if (Init == 1)
 	{
 		for (int c = 0; c < 7; c++) {
-			uint64_t k = atomicAdd(K, 1);
+			uint kn = atomicAdd(Kn, 1);
+			uint64_t k = kn + K;
 			uint km = uint(k%4620l);
 			if (k4620[pm60][km] == 1 && sieve(p2, k))
 			{
 				uint nn = atomicAdd(Kl, 1);
 				//if (nn >= NP) {return;}
-				Klist[nn] = k;
+				Klist[nn] = kn;
 			}
 		}
 		return;
@@ -643,7 +645,7 @@ void main() {
 		uint i = I;
 		if (i < Kl) {
 			int top = int(findMSB((p)));
-			uint64_t k = Klist[i];
+			uint64_t k = Klist[i] + K;
 			if (k == 0) {Debug[1]++;}
 			if (tf(k, p, top)) {
 				Found = k;

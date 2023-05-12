@@ -14,11 +14,12 @@ struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
 	uint64_t    Found;
-	uint64_t    Debug[2];
+	uint        Debug[2];
 	uint        Init;
 	uint        k4620[4620][4620];
+	uint        Kn;
 	uint        Kl;
-	uint64_t    Klist[np];
+	uint    Klist[np];
 };
 
 uint64_t K1, K2, P;
@@ -165,7 +166,7 @@ public:
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		{
-				printf("K: %ld %d  P: %ld %d debug:[%ld,%ld] -- %.2f ms %.2fM/sec\n", p->K, p->Init, p->P,
+				printf("K: %ld %d  P: %ld %d debug:[%d,%d] -- %.2f ms %.2fM/sec\n", p->K, p->Init, p->P,
 			p->Kl, p->Debug[0], p->Debug[1], elapsedTime, (np) / (1000*elapsedTime));
 		}
 		if (p->Init == 1) {
@@ -174,12 +175,14 @@ public:
 		else
 		{
 			if (p->Found) {
-				printf("M%ld has factor with K=%ld E: %ld\n", p->P, p->Found, p->Debug[0]);
+				printf("M%ld has factor with K=%ld E: %d\n", p->P, p->Found, p->Debug[0]);
 				p->Found = 0;
 				mrhDone = 1;
 			}
 			p->Init = 1;
 			p->Kl = 0;
+			p->K += p->Kn;
+			p->Kn = 0;
 			p->Debug[0] = p->Debug[1] = 0;
 
 			if (p->K > K2) {
@@ -215,6 +218,7 @@ public:
 		p->Debug[0] = p->Debug[1] = 0;
 		p->Init = 0;
 		p->Kl = 0;
+		p->Kn = 0;
 
 		// for (int k = 0; k < 4620; k++) {
 		// 	for (uint n = 0; n < 4620; n++) {
