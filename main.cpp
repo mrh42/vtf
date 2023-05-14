@@ -20,7 +20,7 @@ struct Stuff {
 
 };
 struct Stuff2 {
-	uint        k6[60060*17*19];
+	uint        k6[60060*17];
 };
 
 uint64_t K1, K2, P;

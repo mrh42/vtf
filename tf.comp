@@ -16,7 +16,6 @@
 //
 
 // number of threads
-//#define NP 8192*64*4
 
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -34,9 +33,12 @@ layout(binding = 0) buffer buf
 	uint     Kn;
 
 };
+
+#define M (60060*17)
+// This is allocated in DEVICE_LOCAL memory, not shared with host.
 layout(binding = 1) buffer buf2
 {
-	int       k6[60060*17*19];
+	int       k6[M];
 };
 
 struct uint128 {
@@ -199,20 +201,6 @@ void multiply64to128(uint64_t x, uint64_t y, out uint128 r)
 	r.Hi = p[0] + (middle >> 32) + (p[1] >> 32);
 	r.Lo = (middle << 32) | (p[3] & lowbits);
 
-	/*
-	
-	uint64_t p11 = (x >> 32) * (y >> 32);
-	uint64_t p01 = (x & lowbits) * (y >> 32);
-	uint64_t p10 = (x >> 32) * (y & lowbits);
-	uint64_t p00 = (x & lowbits) * (y & lowbits);
-
-	// 64-bit product + two 32-bit values
-	uint64_t middle = p10 + (p00 >> 32) + (p01 & lowbits);
-
-	// 64-bit product + two 32-bit values
-	r.Hi = p11 + (middle >> 32) + (p01 >> 32);
-	r.Lo = (middle << 32) | (p00 & lowbits);
-	*/
 }
 
 //
@@ -233,12 +221,6 @@ void multiply64to128x(uint64_t lhs, uint64_t rhs, inout uint128 r) {
 	r.Hi = upper;
 	r.Lo = (cross << 32) | (lo_lo & 0xFFFFFFFFul);
 }
-void Mul128(uint128 A, uint64_t B, inout uint128 X) {
-	multiply64to128(A.Lo, B, X);
-	uint128 T;
-	multiply64to128(A.Hi, B, T);
-	X.Hi += T.Lo;
-}
 void Sq256(uint128 A, inout uint256 X) {
 	multiply64to128(A.Hi, A.Hi, X.H);
 	multiply64to128(A.Lo, A.Lo, X.L);
@@ -256,21 +238,7 @@ void Sq256(uint128 A, inout uint256 X) {
 		X.H.Hi++;
 	}
 }
-void Sq192(uint128 A, inout uint192 X) {	
-	X.H = A.Hi * A.Hi;
-	multiply64to128(A.Lo, A.Lo, X.L);
-
-	uint128 T;
-	multiply64to128(A.Hi, A.Lo, T);
-	Lsh(T);
-
-	X.L.Hi += T.Lo;
-	if (X.L.Hi < T.Lo) {
-		X.H++;
-	}
-	X.H += T.Hi;
-}
-void Mul192x(uint128 A, uint128 B, out uint192 R) {
+void Mul192(uint128 A, uint128 B, out uint192 R) {
 	uint64_t lb = 0xfffffffful;
 	uint64_t x00 = (A.Lo & lb) * (B.Lo & lb);
 	uint64_t x01 = (A.Lo & lb) * (B.Lo >> 32);
@@ -289,7 +257,7 @@ void Mul192x(uint128 A, uint128 B, out uint192 R) {
 	R.L.Hi = (n & lb) | (o << 32);
 	R.H = (o >> 32) + x22;
 }
-void Sq192x(uint128 A, out uint192 R) {
+void Sq192(uint128 A, out uint192 R) {
 	uint64_t lb = 0xfffffffful;
 	uint64_t alh = A.Lo >> 32;
 	uint64_t all = A.Lo & lb;
@@ -308,27 +276,7 @@ void Sq192x(uint128 A, out uint192 R) {
 	R.L.Hi = (n & lb) | (o << 32);
 	R.H = (o >> 32) + x22;
 }
-void Mul192(uint128 A, uint128 B, inout uint192 X) {
-	X.H = A.Hi * B.Hi;
-	multiply64to128(A.Lo, B.Lo, X.L);
 
-	uint128 T;
-	multiply64to128(B.Hi, A.Lo, T);
-
-	X.L.Hi += T.Lo;
-	if (X.L.Hi < T.Lo) {
-		X.H++;
-	}
-	X.H += T.Hi;
-
-	multiply64to128(A.Hi, B.Lo, T);
-
-	X.L.Hi += T.Lo;
-	if (X.L.Hi < T.Lo) {
-		X.H++;
-	}
-	X.H += T.Hi;
-}
 void Mul256(uint128 A, uint128 B, inout uint256 X) {
 	multiply64to128(A.Hi, B.Hi, X.H);
 	multiply64to128(A.Lo, B.Lo, X.L);
@@ -416,7 +364,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	uint192 QQ;
 	QQ.H = 0; QQ.L.Lo = Q.Lo; QQ.L.Hi = Q.Hi;
 
-	Sq192x(A, X);
+	Sq192(A, X);
 	if (doshift) {
 		Lsh(X);
 	}
@@ -434,7 +382,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 		if (Zero(D)) {
 			D.Lo = 1;
 		}
-		Mul192x(D, Q, Y);
+		Mul192(D, Q, Y);
 		Sub(X, Y);
 		i++;
 	}
@@ -473,10 +421,12 @@ bool tf(uint64_t k, uint64_t p, int top) {
 }
 
 void init(uint k) {
-	uint pm6 = uint(P % (60060*17*19)); 
-	if (k < 60060*17*19) {
+
+	uint pm6 = uint(P % M); 
+
+	if (k < M) {
 		uint q = 2 * pm6 * k + 1;
-		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {
+		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
 			k6[k] = 0;
 		} else {
 			k6[k] = 1;
@@ -494,16 +444,16 @@ void main() {
 		return;
 	}
 
-	const uint pm60 = uint(P % 4620l);
-	const uint pm4199 = uint(P % 4199l);
+	//const uint pm60 = uint(P % 4620l);
+	//const uint pm4199 = uint(P % 4199l);
 	const uint p2 = uint(P * 2);
 	const uint64_t p = P;
 
 	uint64_t k = 0;
-	for (int c = 0; c < 20; c++) {
+	for (int c = 0; c < 100; c++) {
 		uint kn = atomicAdd(Kn, 1);
 		k = kn + K;
-		if (k6[uint(k%(60060*17*19))] == 1)
+		if (k6[uint(k%(M))] == 1)
 		{
 			break;
 		}
