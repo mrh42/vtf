@@ -39,7 +39,10 @@ layout(binding = 0) buffer buf
 // This is allocated in DEVICE_LOCAL memory, not shared with host.
 layout(binding = 1) buffer buf2
 {
-	int       k6[M];
+	uint64_t    M19;
+	uint64_t    M23;
+	uint64_t    M29;
+	int       K6[M];
 };
 
 struct uint128 {
@@ -423,25 +426,18 @@ bool tf(uint64_t k, uint64_t p, int top) {
 
 void init(uint k) {
 
-	uint pm6 = uint(P % M); 
+	uint64_t pm6 = P % M; 
 
 	if (k < M) {
-		uint q = 2 * pm6 * k + 1;
+		uint64_t q = 2 * pm6 * k + 1;
+		//if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {
 		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
-			k6[k] = 0;
+			K6[k] = 0;
 		} else {
-			k6[k] = 1;
+			K6[k] = 1;
 		}
 	}
-/*	uint pm7 = uint(P % M2);
-	if (k < M2) {
-		uint q = 2 * pm7 * k + 1;
-		if ((q%19 == 0) || (q%23 == 0) || (q%29 == 0) || (q%31 == 0)) {
-			k7[k] = 0;
-		} else {
-			k7[k] = 1;
-		}
-		}*/
+
 }
 
 void main() {
@@ -457,26 +453,27 @@ void main() {
 	//
 	// K is 64bit and Kn is 32bit.  64bit modulo is a bit slow.
 	// The cpu always calls us with K == 0 mod M, and Kn == 0. So we can use Kn%M vs K%M.
+	// We have to be careful here that Kn doesn't overflow.
 	//
-	const uint p2 = uint(P * 2);
-	const uint64_t p = P;
-
-	uint64_t k = 0;
-	for (int c = 0; c < 100; c++) {
-		uint kn = atomicAdd(Kn, 1);
-		k = kn + K;
-		if (k6[kn%(M)] == 1)
-		{
-			break;
+	uint p = uint(P);
+	for (int c = 0; c < 4; c++) {
+		uint64_t k = 0;
+		for (int c = 0; c < 150; c++) {
+			uint kn = atomicAdd(Kn, 1);
+			k = kn + K;
+			if (K6[kn%(M)] == 1)
+			{
+				break;
+			}
+			k = 0;
 		}
-		k = 0;
-	}
 
-	if (k == 0) {Debug[0]++;return;}
-//return;
-	int top = int(findMSB((p)));
-	if (tf(k, p, top)) {
-		Found = k;
-		atomicAdd(Debug[1], 1);
+		if (k == 0) {Debug[0]++;continue;}
+		//continue;
+		int top = int(findMSB((p)));
+		if (tf(k, P, top)) {
+			Found = k;
+			atomicAdd(Debug[1], 1);
+		}
 	}
 }

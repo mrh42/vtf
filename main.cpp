@@ -8,10 +8,10 @@
 #include <cmath>
 #include <sys/time.h>
 
-const int M = 60060*17;
+const uint M = 60060*17;
 
 //const int np = 8192*64*16;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
-const int np = M * 5.597;
+const uint np = M*5.68667;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 struct Stuff {
@@ -25,7 +25,10 @@ struct Stuff {
 };
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
 struct Stuff2 {
-	uint        k6[M];
+	uint64_t    M19;
+	uint64_t    M23;
+	uint64_t    M29;
+	uint        K6[M];
 };
 
 uint64_t K1, K2, P;
@@ -193,7 +196,7 @@ public:
 		if (p->K % M != 0) {
 			printf("error --- %ld not 0 mod %d\n", p->K, M);	
 		} else {
-			//printf("Lost: %ld\n", p->Kn - x);	
+			printf("Lost: %ld\n", p->Kn - x);	
 		}
 					       
 		p->Kn = 0;
