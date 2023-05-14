@@ -9,17 +9,22 @@
 #include <sys/time.h>
 
 
-const int np = 8192*64*4;  // total threads to start, check shader, need atleast 4620 to initialize.
+const int np = 8192*64*8;  // total threads to start, check shader, need atleast 4620 to initialize.
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
 	uint64_t    Found;
 	uint        Debug[2];
 	uint        Init;
-	uint        k4620[4620][4620];
 	uint        Kn;
-	uint        Kl;
-	uint    Klist[np];
+	//uint        k4620[4620];
+	//uint        k4199[4199];
+	//uint        k6[60060*17];
+	//uint        k7[19*23*29*31];
+};
+struct Stuff2 {
+	uint        k6[60060*17];
+	uint        k7[19*23*29*31];
 };
 
 uint64_t K1, K2, P;
@@ -105,10 +110,11 @@ private:
 
     The memory that backs the buffer is bufferMemory. 
     */
-    VkBuffer buffer;
-    VkDeviceMemory bufferMemory;
+	VkBuffer buffer, buffer2;
+	VkDeviceMemory bufferMemory, bufferMemory2;
         
     uint32_t bufferSize; // size of `buffer` in bytes.
+    uint32_t bufferSize2; // size of `buffer` in bytes.
 
     std::vector<const char *> enabledLayers;
 
@@ -136,18 +142,20 @@ private:
 public:
     void run() {
 	bufferSize = sizeof(struct Stuff);
+	bufferSize2 = sizeof(struct Stuff2);
 
         // Initialize vulkan:
         createInstance();
         findPhysicalDevice();
         createDevice();
         createBuffer();
+        createBuffer2();
         createDescriptorSetLayout();
         createDescriptorSet();
         createComputePipeline();
 
 	createCommandBuffer();
-
+	//exit(0);
 	mrhInit();
 	void* mappedMemory = NULL;
 	vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
@@ -166,21 +174,17 @@ public:
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		{
-				printf("K: %ld %d  P: %ld %d debug:[%d,%d] -- %.2f ms %.2fM/sec\n", p->K, p->Init, p->P,
-			p->Kl, p->Debug[0], p->Debug[1], elapsedTime, (np) / (1000*elapsedTime));
+				printf("K: %ld P: %ld %.2f%c %d debug:[%d,%d] -- %.2f ms %.2fM/sec\n", p->K, p->P,
+				       100* double(p->K - K1)/ double (K2 - K1), '%',
+				       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
 		}
-		if (p->Init == 1) {
-			p->Init++;
-		}
-		else
 		{
 			if (p->Found) {
 				printf("M%ld has factor with K=%ld E: %d\n", p->P, p->Found, p->Debug[0]);
 				p->Found = 0;
 				mrhDone = 1;
 			}
-			p->Init = 1;
-			p->Kl = 0;
+			//p->Init = 1;
 			p->K += p->Kn;
 			p->Kn = 0;
 			p->Debug[0] = p->Debug[1] = 0;
@@ -217,7 +221,6 @@ public:
 		p->Found = 0;
 		p->Debug[0] = p->Debug[1] = 0;
 		p->Init = 0;
-		p->Kl = 0;
 		p->Kn = 0;
 
 		// for (int k = 0; k < 4620; k++) {
@@ -552,11 +555,35 @@ public:
         */
         allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
         //allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	printf("MI: %d \n", allocateInfo.memoryTypeIndex);
 
         VK_CHECK_RESULT(vkAllocateMemory(device, &allocateInfo, NULL, &bufferMemory)); // allocate memory on device.
         
         // Now associate that allocated memory with the buffer. With that, the buffer is backed by actual memory. 
         VK_CHECK_RESULT(vkBindBufferMemory(device, buffer, bufferMemory, 0));
+    }
+    void createBuffer2() {
+        VkBufferCreateInfo bufferCreateInfo = {};
+        bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferCreateInfo.size = bufferSize2; 
+        bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // buffer is used as a storage buffer.
+        bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // buffer is exclusive to a single queue family at a time. 
+
+        VK_CHECK_RESULT(vkCreateBuffer(device, &bufferCreateInfo, NULL, &buffer2)); // create buffer.
+
+        VkMemoryRequirements memoryRequirements;
+        vkGetBufferMemoryRequirements(device, buffer2, &memoryRequirements);
+        
+        VkMemoryAllocateInfo allocateInfo = {};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocateInfo.allocationSize = memoryRequirements.size; // specify required memory.
+        allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	printf("MI: %d \n", allocateInfo.memoryTypeIndex);
+
+        VK_CHECK_RESULT(vkAllocateMemory(device, &allocateInfo, NULL, &bufferMemory2)); // allocate memory on device.
+        
+        // Now associate that allocated memory with the buffer. With that, the buffer is backed by actual memory. 
+        VK_CHECK_RESULT(vkBindBufferMemory(device, buffer2, bufferMemory2, 0));
     }
 
     void createDescriptorSetLayout() {
@@ -574,16 +601,24 @@ public:
 
         in the compute shader.
         */
-        VkDescriptorSetLayoutBinding descriptorSetLayoutBinding = {};
-        descriptorSetLayoutBinding.binding = 0; // binding = 0
-        descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorSetLayoutBinding.descriptorCount = 1;
-        descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+ 	VkDescriptorSetLayoutBinding b[2];
+	//VkDescriptorSetLayoutBinding descriptorSetLayoutBinding = {};
+        b[0].binding = 0; // binding = 0
+        b[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b[0].descriptorCount = 1;
+        b[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+	//VkDescriptorSetLayoutBinding descriptorSetLayoutBinding2 = {};
+        b[1].binding = 1; // binding = 1
+        b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b[1].descriptorCount = 1;
+        b[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+	
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
         descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        descriptorSetLayoutCreateInfo.bindingCount = 1; // only a single binding in this descriptor set layout. 
-        descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding; 
+        descriptorSetLayoutCreateInfo.bindingCount = 2; // only a single binding in this descriptor set layout. 
+        descriptorSetLayoutCreateInfo.pBindings = b;
 
         // Create the descriptor set layout. 
         VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, NULL, &descriptorSetLayout));
@@ -600,7 +635,7 @@ public:
         */
         VkDescriptorPoolSize descriptorPoolSize = {};
         descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorPoolSize.descriptorCount = 1;
+        descriptorPoolSize.descriptorCount = 2;
 
         VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
         descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -628,19 +663,24 @@ public:
         We use vkUpdateDescriptorSets() to update the descriptor set.
         */
 
+	VkDescriptorBufferInfo bi[2];
         // Specify the buffer to bind to the descriptor.
-        VkDescriptorBufferInfo descriptorBufferInfo = {};
-        descriptorBufferInfo.buffer = buffer;
-        descriptorBufferInfo.offset = 0;
-        descriptorBufferInfo.range = bufferSize;
+        //VkDescriptorBufferInfo descriptorBufferInfo = {};
+        bi[0].buffer = buffer;
+        bi[0].offset = 0;
+        bi[0].range = bufferSize;
 
+        bi[1].buffer = buffer2;
+        bi[1].offset = 0;
+        bi[1].range = bufferSize2;
+	
         VkWriteDescriptorSet writeDescriptorSet = {};
         writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writeDescriptorSet.dstSet = descriptorSet; // write to this descriptor set.
         writeDescriptorSet.dstBinding = 0; // write to the first, and only binding.
-        writeDescriptorSet.descriptorCount = 1; // update a single descriptor.
+        writeDescriptorSet.descriptorCount = 2; // update a single descriptor.
         writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; // storage buffer.
-        writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
+        writeDescriptorSet.pBufferInfo = bi;
 
         // perform the update of the descriptor set.
         vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, NULL);
