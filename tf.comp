@@ -35,6 +35,7 @@ layout(binding = 0) buffer buf
 };
 
 #define M (60060*17)
+//#define M2 (17*19*20*31)
 // This is allocated in DEVICE_LOCAL memory, not shared with host.
 layout(binding = 1) buffer buf2
 {
@@ -432,20 +433,31 @@ void init(uint k) {
 			k6[k] = 1;
 		}
 	}
+/*	uint pm7 = uint(P % M2);
+	if (k < M2) {
+		uint q = 2 * pm7 * k + 1;
+		if ((q%19 == 0) || (q%23 == 0) || (q%29 == 0) || (q%31 == 0)) {
+			k7[k] = 0;
+		} else {
+			k7[k] = 1;
+		}
+		}*/
 }
 
 void main() {
 	// Which thread are we?
-
 	uint I = gl_GlobalInvocationID.x;
+
 	// When called with Init == 0, we need to initialize ourselves and return.
 	if (Init == 0) {
 		init(I);
 		return;
 	}
 
-	//const uint pm60 = uint(P % 4620l);
-	//const uint pm4199 = uint(P % 4199l);
+	//
+	// K is 64bit and Kn is 32bit.  64bit modulo is a bit slow.
+	// The cpu always calls us with K == 0 mod M, and Kn == 0. So we can use Kn%M vs K%M.
+	//
 	const uint p2 = uint(P * 2);
 	const uint64_t p = P;
 
@@ -453,15 +465,16 @@ void main() {
 	for (int c = 0; c < 100; c++) {
 		uint kn = atomicAdd(Kn, 1);
 		k = kn + K;
-		if (k6[uint(k%(M))] == 1)
+		if (k6[kn%(M)] == 1)
 		{
 			break;
 		}
 		k = 0;
 	}
 
-	int top = int(findMSB((p)));
 	if (k == 0) {Debug[0]++;return;}
+//return;
+	int top = int(findMSB((p)));
 	if (tf(k, p, top)) {
 		Found = k;
 		atomicAdd(Debug[1], 1);

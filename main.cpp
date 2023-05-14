@@ -8,8 +8,12 @@
 #include <cmath>
 #include <sys/time.h>
 
+const int M = 60060*17;
 
-const int np = 8192*64*8;  // total threads to start, check shader, need atleast 4620 to initialize.
+//const int np = 8192*64*16;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
+const int np = M * 5.597;
+
+// This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
@@ -19,8 +23,9 @@ struct Stuff {
 	uint        Kn;
 
 };
+// This is allocated in DEVICE_LOCAL memory, and is not shared with host.
 struct Stuff2 {
-	uint        k6[60060*17];
+	uint        k6[M];
 };
 
 uint64_t K1, K2, P;
@@ -158,9 +163,11 @@ public:
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
 	while (1) {
+
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
-
+		
+	
 		runCommandBuffer();
 
 
@@ -174,20 +181,26 @@ public:
 				       100* double(p->K - K1)/ double (K2 - K1), '%',
 				       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
 		}
-		{
-			if (p->Found) {
-				printf("M%ld has factor with K=%ld E: %d\n", p->P, p->Found, p->Debug[0]);
-				p->Found = 0;
-				mrhDone = 1;
-			}
-			//p->Init = 1;
-			p->K += p->Kn;
-			p->Kn = 0;
-			p->Debug[0] = p->Debug[1] = 0;
 
-			if (p->K > K2) {
-				mrhDone = 1;
-			}
+		if (p->Found) {
+			printf("M%ld has factor with K=%ld E: %d\n", p->P, p->Found, p->Debug[0]);
+			p->Found = 0;
+			mrhDone = 1;
+		}
+		uint64_t x = M * (p->Kn / M);
+		p->K += x;
+
+		if (p->K % M != 0) {
+			printf("error --- %ld not 0 mod %d\n", p->K, M);	
+		} else {
+			//printf("Lost: %ld\n", p->Kn - x);	
+		}
+					       
+		p->Kn = 0;
+		p->Debug[0] = p->Debug[1] = 0;
+
+		if (p->K > K2) {
+			mrhDone = 1;
 		}
     
 		if (mrhDone) { break; }
@@ -212,6 +225,11 @@ public:
 		//p->K = 606233611363280;
 		//p->P = 262359187;
 		//p->K = 36929909828640;
+		printf("--K: %ld\n", K1);
+		while (K1 % (M) != 0) {
+			K1--;
+		}
+		printf("++K: %ld\n", K1);
 		p->K = K1;
 		p->P = P;
 		p->Found = 0;
@@ -219,17 +237,6 @@ public:
 		p->Init = 0;
 		p->Kn = 0;
 
-		// for (int k = 0; k < 4620; k++) {
-		// 	for (uint n = 0; n < 4620; n++) {
-		// 		uint q = 2 * n * k + 1;
-		// 		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0)) {
-		// 			p->k4620[n][k] = 0;
-		// 		} else {
-		// 			p->k4620[n][k] = 1;
-		// 		}
-		// 	}
-		// }
-		
 		runCommandBuffer();  // initialize some shader stuff
 		p->Init = 1;         // now we are done.
 		vkUnmapMemory(device, bufferMemory);
