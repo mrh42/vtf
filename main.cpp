@@ -17,14 +17,10 @@ struct Stuff {
 	uint        Debug[2];
 	uint        Init;
 	uint        Kn;
-	//uint        k4620[4620];
-	//uint        k4199[4199];
-	//uint        k6[60060*17];
-	//uint        k7[19*23*29*31];
+
 };
 struct Stuff2 {
-	uint        k6[60060*17];
-	uint        k7[19*23*29*31];
+	uint        k6[60060*17*19];
 };
 
 uint64_t K1, K2, P;
