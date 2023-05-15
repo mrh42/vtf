@@ -3,7 +3,7 @@
 //#extension GL_ARB_gpu_shader_int64 : enable
 //#extension GL_EXT_debug_printf : enable
 //#extension GL_KHR_shader_subgroup_vote : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+//#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
 //#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 //#extension GL_EXT_shader_atomic_int64: enable
@@ -42,7 +42,7 @@ layout(binding = 1) buffer buf2
 	uint64_t    M19;
 	uint64_t    M23;
 	uint64_t    M29;
-	int       K6[M];
+	restrict int       K6[M];
 };
 
 struct uint128 {
@@ -266,7 +266,7 @@ void Sq192(uint128 A, out uint192 R) {
 	uint64_t alh = A.Lo >> 32;
 	uint64_t all = A.Lo & lb;
 	uint64_t ahl = A.Hi & lb;
-	uint64_t x00 = (all) * (all);
+	uint64_t x00 = all * all;
 	uint64_t x01 = (all) * (alh);
 	uint64_t x02 = (all) * (ahl);
 	uint64_t x11 = (alh) * (alh);
@@ -456,7 +456,7 @@ void main() {
 	// We have to be careful here that Kn doesn't overflow.
 	//
 	uint p = uint(P);
-	for (int c = 0; c < 4; c++) {
+	for (int c = 0; c < 10; c++) {
 		uint64_t k = 0;
 		for (int c = 0; c < 150; c++) {
 			uint kn = atomicAdd(Kn, 1);

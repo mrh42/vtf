@@ -11,10 +11,10 @@
 const uint M = 60060*17;
 //const uint M = 60060*17*19;
 
-//const int np = 8192*64*16;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
+const int np = 8192*64*8;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
 //const uint np = M*5.68667;
-const uint np = 1474630;
-//const uint np = M;
+//const uint np = 1474630;
+//const uint np = M * 6;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 struct Stuff {
@@ -168,6 +168,10 @@ public:
 	vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
+	if (M > np) {
+		printf("M %d > np %d -- this is an error!\n", M, np);
+		exit(1);
+	}
 	while (1) {
 
 		struct timeval t1, t2;
@@ -196,13 +200,15 @@ public:
 		uint64_t x = M * (p->Kn / M);
 		p->K += x;
 
+		p->Kn = p->Kn % M;
+		//printf("Kn: %d\n", p->Kn);	
+
 		if (p->K % M != 0) {
 			printf("error --- %ld not 0 mod %d\n", p->K, M);	
 		} else {
-			printf("Lost: %ld\n", p->Kn - x);	
+			//printf("Lost: %ld\n", p->Kn - x);	
 		}
 					       
-		p->Kn = 0;
 		p->Debug[0] = p->Debug[1] = 0;
 
 		if (p->K > K2) {
