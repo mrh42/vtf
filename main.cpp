@@ -9,14 +9,16 @@
 #include <sys/time.h>
 
 //const uint M = 60060*17;
+// enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
+//
 const uint M = 60060*17*19;
-
-const int np = 8192*64*64;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
-//const uint np = M*5.68667;
-//const uint np = 1474630;
-//const uint np = M * 6;
+// total threads to start, check shader, need atleast enough to to initialize the
+// DEVICE_LOCAL arrays below.
+//
+const int np = 8192*64*64;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
+// it is somewhat slow, compared to DEVICE_LOCAL memory.
 struct Stuff {
 	uint64_t    P;
 	uint64_t    K;
@@ -27,10 +29,8 @@ struct Stuff {
 
 };
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
+// This is much to access faster from the shader, especially if the GPU is in a PCIx1 slot.
 struct Stuff2 {
-	uint64_t    M19;
-	uint64_t    M23;
-	uint64_t    M29;
 	uint        K6[M];
 };
 
@@ -172,6 +172,8 @@ public:
 		printf("M %d > np %d -- this is an error!\n", M, np);
 		exit(1);
 	}
+	uint64_t t = M * (P%M) * 2;
+	printf("M * PmodM * 2 = %lx\n", t);
 	while (1) {
 
 		struct timeval t1, t2;
@@ -349,7 +351,7 @@ public:
         applicationInfo.applicationVersion = 0;
         applicationInfo.pEngineName = "awesomeengine";
         applicationInfo.engineVersion = 0;
-        applicationInfo.apiVersion = VK_API_VERSION_1_0;;
+        applicationInfo.apiVersion = VK_API_VERSION_1_3;
         
         VkInstanceCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;

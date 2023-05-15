@@ -34,14 +34,16 @@ layout(binding = 0) buffer buf
 
 };
 
-//#define M (60060*17)
+//
+// enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
+//
 #define M (60060*17*19)
+//#define M (60060*17)
+
 // This is allocated in DEVICE_LOCAL memory, not shared with host.
+// This is much faster to access from the shader, especially if the GPU is in a PCIx1 slot.
 layout(binding = 1) buffer buf2
 {
-	uint64_t    M19;
-	uint64_t    M23;
-	uint64_t    M29;
 	restrict int       K6[M];
 };
 
@@ -380,8 +382,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	// normally takes 2 passes.
 	//
 	while (i < 7 && Cmp(X, Q) > 0) {
-		double x = toF(X);
-		double xqi = x*qinv;
+		double xqi = toF(X)*qinv;
 		fto128(xqi, D);
 		if (Zero(D)) {
 			D.Lo = 1;
@@ -390,7 +391,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 		Sub(X, Y);
 		i++;
 	}
-	//if (gl_GlobalInvocationID.x == 0 && i > 5) {Debug[1]++;}
+	//if (i > 3) {Debug[1]++;}
 	A = X.L;
 }
 
@@ -426,8 +427,8 @@ void init(uint k) {
 
 	if (k < M) {
 		uint64_t q = 2 * pm6 * k + 1;
+		//if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
 		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {
-			//if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
 			K6[k] = 0;
 		} else {
 			K6[k] = 1;
@@ -437,18 +438,20 @@ void init(uint k) {
 }
 
 void main() {
-	// Which thread are we?
 
 	// When called with Init == 0, we need to initialize ourselves and return.
 	if (Init == 0) {
+		// Which thread are we?  Use this as a K-value in init, using a bunch of threads.
 		uint I = gl_GlobalInvocationID.x;
 		init(I);
 		return;
 	}
 
 	//
+	// K is the base starting value for this invocation.  Each thread grab a unique Kn,
+	// then test k = (K + Kn).
 	// K is 64bit and Kn is 32bit.  64bit modulo is a bit slow.
-	// The cpu always calls us with K == 0 mod M, and Kn == 0. So we can use Kn%M vs K%M.
+	// The cpu always calls us with K == 0 mod M. So we can use Kn%M vs K%M.
 	// We have to be careful here that Kn doesn't overflow.
 	//
 	uint p = uint(P);
@@ -460,11 +463,13 @@ void main() {
 		k = kn + K;
 		if (K6[kn%(M)] == 1)
 		{
+			// found a viable candidate, go to next phase.
 			break;
 		}
 		k = 0;
 	}
 
+	// check if something when terribly wrong above.
 	if (k == 0) {Debug[0]++;return;}
 	//return;
 	int top = int(findMSB((p)));
