@@ -9,15 +9,18 @@
 //#extension GL_EXT_shader_atomic_int64: enable
 
 //
-// compile this file into SPIR-V with: glslangValidator --target-env vulkan1.3 -V tf.comp
-// or glslc --target-env=vulkan1.3 tf.comp
+// compile this file into SPIR-V with:
+//   glslangValidator --target-env vulkan1.3 -V tf.comp
+// or
+//   glslc --target-env=vulkan1.3 tf.comp -o comp.spv
+// glslc might produce slightly faster SPIR-C for the Radeon VII
 //
 // Installing the 'vulkan-amdgpu' package will result in a significant (2.5x) performance increase.
 //
 
 // number of threads
 
-layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = 64) in;
 
 // for speed, we only have space to return one found factor.  In the case of P with multiple close factors,
 // which could be found in the same invocation, these will write over each other.  Since we might have 512K threads
@@ -28,9 +31,9 @@ layout(binding = 0) buffer buf
 	uint64_t    P;       // input from CPU side
 	uint64_t    K;       // base K input from CPU side
 	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
-	uint        Debug[2];     // output only used for debugging
+	uint        Debug[2];// output only used for debugging
 	uint        Init;    // If this is 0, then we setup our tables once.
-	uint     Kn;
+	uint        Kn;      // K + Kn represents the factor to be tested, threads get a Kn atomicAdd(Kn, 1)
 
 };
 
@@ -40,8 +43,9 @@ layout(binding = 0) buffer buf
 #define M (60060*17*19)
 //#define M (60060*17)
 
-// This is allocated in DEVICE_LOCAL memory, not shared with host.
+// This is allocated in DEVICE_LOCAL memory, not shared with host.  See CPU code to see how this is allocated.
 // This is much faster to access from the shader, especially if the GPU is in a PCIx1 slot.
+// using an int per flag is wasteful, but seems to be fastest.  bool is much slower.
 layout(binding = 1) buffer buf2
 {
 	restrict int       K6[M];
@@ -441,23 +445,24 @@ void main() {
 
 	// When called with Init == 0, we need to initialize ourselves and return.
 	if (Init == 0) {
-		// Which thread are we?  Use this as a K-value in init, using a bunch of threads.
+		// Which thread are we?  Use this as a K-value in init, using a bunch of threads to
+		// do the work.
 		uint I = gl_GlobalInvocationID.x;
 		init(I);
 		return;
 	}
 
 	//
-	// K is the base starting value for this invocation.  Each thread grab a unique Kn,
-	// then test k = (K + Kn).
+	// K is the base starting value for this invocation.  Each thread grabs a unique Kn,
+	// then tests k = (K + Kn).
 	// K is 64bit and Kn is 32bit.  64bit modulo is a bit slow.
 	// The cpu always calls us with K == 0 mod M. So we can use Kn%M vs K%M.
-	// We have to be careful here that Kn doesn't overflow.
+	// We do have to be careful here that Kn doesn't overflow.
 	//
 	uint p = uint(P);
 	uint64_t k = 0;
 	// use for loop when testing, or we get stuck in a nasty loop.
-	//for (int c = 0; c < 150; c++) {
+	// for (int c = 0; c < 150; c++) {
 	while (true) {
 		uint kn = atomicAdd(Kn, 1);
 		k = kn + K;
@@ -471,7 +476,7 @@ void main() {
 
 	// check if something when terribly wrong above.
 	if (k == 0) {Debug[0]++;return;}
-	//return;
+	// return;
 	int top = int(findMSB((p)));
 	if (tf(k, P, top)) {
 		Found = k;
