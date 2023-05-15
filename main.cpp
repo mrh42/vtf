@@ -8,10 +8,10 @@
 #include <cmath>
 #include <sys/time.h>
 
-const uint M = 60060*17;
-//const uint M = 60060*17*19;
+//const uint M = 60060*17;
+const uint M = 60060*17*19;
 
-const int np = 8192*64*8;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
+const int np = 8192*64*64;  // total threads to start, check shader, need atleast enough to to initialize the arrays below.
 //const uint np = M*5.68667;
 //const uint np = 1474630;
 //const uint np = M * 6;

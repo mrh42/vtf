@@ -34,8 +34,8 @@ layout(binding = 0) buffer buf
 
 };
 
-#define M (60060*17)
-//#define M (60060*17*19)
+//#define M (60060*17)
+#define M (60060*17*19)
 // This is allocated in DEVICE_LOCAL memory, not shared with host.
 layout(binding = 1) buffer buf2
 {
@@ -430,8 +430,8 @@ void init(uint k) {
 
 	if (k < M) {
 		uint64_t q = 2 * pm6 * k + 1;
-		//if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {
-		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
+		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {
+			//if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
 			K6[k] = 0;
 		} else {
 			K6[k] = 1;
@@ -456,7 +456,7 @@ void main() {
 	// We have to be careful here that Kn doesn't overflow.
 	//
 	uint p = uint(P);
-	for (int c = 0; c < 10; c++) {
+	for (int c = 0; c < 1; c++) {
 		uint64_t k = 0;
 		for (int c = 0; c < 150; c++) {
 			uint kn = atomicAdd(Kn, 1);
