@@ -379,7 +379,7 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	// Always guess D a little low, and refine our guess as we get closer.
 	// normally takes 2 passes.
 	//
-	while (i < 10 && Cmp(X, Q) > 0) {
+	while (i < 7 && Cmp(X, Q) > 0) {
 		double x = toF(X);
 		double xqi = x*qinv;
 		fto128(xqi, D);
@@ -402,12 +402,8 @@ bool tf(uint64_t k, uint64_t p, int top) {
 	Lsh(q);
 	Inc(q);
 
-	uint64_t x = q.Lo & 7;
-	if (x != 1 && x != 7) {
-		Debug[1]++;
-	}
-	// Make our 1/q just a tiny bit too small, so we don't over estimate,
-	// but not so small as to need extra passes.
+        // Make our 1/q just a tiny bit too small, so we don't over estimate,
+        // but not so small as to need extra passes.
 	double qinv = 0.99999999999999 / toF(q);
 	//double qinv =   0.9999999999999994 / toF(q);
 	//double qinv = 1.0 / toF(q);
@@ -442,10 +438,10 @@ void init(uint k) {
 
 void main() {
 	// Which thread are we?
-	uint I = gl_GlobalInvocationID.x;
 
 	// When called with Init == 0, we need to initialize ourselves and return.
 	if (Init == 0) {
+		uint I = gl_GlobalInvocationID.x;
 		init(I);
 		return;
 	}
@@ -456,24 +452,24 @@ void main() {
 	// We have to be careful here that Kn doesn't overflow.
 	//
 	uint p = uint(P);
-	for (int c = 0; c < 1; c++) {
-		uint64_t k = 0;
-		for (int c = 0; c < 150; c++) {
-			uint kn = atomicAdd(Kn, 1);
-			k = kn + K;
-			if (K6[kn%(M)] == 1)
-			{
-				break;
-			}
-			k = 0;
+	uint64_t k = 0;
+	// use for loop when testing, or we get stuck in a nasty loop.
+	//for (int c = 0; c < 150; c++) {
+	while (true) {
+		uint kn = atomicAdd(Kn, 1);
+		k = kn + K;
+		if (K6[kn%(M)] == 1)
+		{
+			break;
 		}
+		k = 0;
+	}
 
-		if (k == 0) {Debug[0]++;continue;}
-		//continue;
-		int top = int(findMSB((p)));
-		if (tf(k, P, top)) {
-			Found = k;
-			atomicAdd(Debug[1], 1);
-		}
+	if (k == 0) {Debug[0]++;return;}
+	//return;
+	int top = int(findMSB((p)));
+	if (tf(k, P, top)) {
+		Found = k;
+		atomicAdd(Debug[1], 1);
 	}
 }
