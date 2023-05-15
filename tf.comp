@@ -9,7 +9,7 @@
 //#extension GL_EXT_shader_atomic_int64: enable
 
 //
-// compile this file with: glslangValidator --target-env vulkan1.3 -V tf.comp
+// compile this file into SPIR-V with: glslangValidator --target-env vulkan1.3 -V tf.comp
 // or glslc --target-env=vulkan1.3 tf.comp
 //
 // Installing the 'vulkan-amdgpu' package will result in a significant (2.5x) performance increase.
@@ -35,7 +35,7 @@ layout(binding = 0) buffer buf
 };
 
 #define M (60060*17)
-//#define M2 (17*19*20*31)
+//#define M (60060*17*19)
 // This is allocated in DEVICE_LOCAL memory, not shared with host.
 layout(binding = 1) buffer buf2
 {
