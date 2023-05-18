@@ -1,15 +1,31 @@
 # vtf
-simple vulkan compute shader TF implementation
+A simple vulkan compute shader TF implementation for mersenne primes.  This isn't meant
+for production, mostly to explore what can be done and how well in a computer shader.
 
-Some design thoughts
-- Very minimal data movement between the cpu/gpu. R/W to/from gpu memory is really slow from the cpu. So it writes some tables before the first call, but after that the cpu only looks at a couple uint64_t values per call.
+For vulkan tools see: https://www.lunarg.com/vulkan-sdk/
 
-- Try to keep all the gpu "threads" doing useful work. I found my gpu likes a lot. Like 512k threads. So be very mindful of branching, etc. You don't want one edge case going while 1000s are waiting for it to catch up.
+To compile the CPU side:
 
-- To keep everyone working on something, requires a little memory trade-off. So each thread starts with a range of 200ish K values, and builds an array of 30ish to pass to the next sieve stage. Something like 13 stages of list shortening gave good results. I think this can still be improved, the first stage should be broken up.
+`g++ -O -o main main.cpp -lvulkan`
 
-- This pre-work is done with 32bit P and 64bit K values, but it still does a number of integer mod operations. So I found using around 200 small primes for the sieve() was a good balance for saving work in the next step.
+There is a comp.spv SPIR-V binary checked in to git, but to re-compile the shader code into SPIR-V, use either:
 
-- For the K values that make it through the sieve, we finally create Q from P*2*K+1, start squaring. This will perform 10*log2(Q) * log2(P) - ish simple operations on a 96bit extended uints. These are fast, but that is a lot of operations, 20K maybe? I'll work on this next.
+`glslangValidator --target-env vulkan1.3 -V tf.comp`
 
-That last step works well across the threads, but there is still some variation in the length of the lists of k-values to test between threads. So there are some threads waiting around, that could be doing work. I don't know what to do about that, maybe threads within a work group could balance out the work lists. There are some mechanisms for that.
+or:
+
+`glslc --target-env=vulkan1.3 tf.comp -o comp.spv`
+
+To run, use something like:
+
+`./main 262359179 3781738011656 3789738911656 0`
+
+The arguments are the exponent to be test, starting and ending K-values, and the vulkan device number to be used.
+
+Factors tested are computed by K * 2 * P + 1.  To compute a starting K by factor bit size X, use 2^(X-1) / P.
+Using the unix 'dc' calculator, you can do something like:
+
+`2 74 1 - ^ 262359179 / p`
+
+which returns 35999247298068.  Use twice that as the ending value to cover 2^74 - 2^75.
+
