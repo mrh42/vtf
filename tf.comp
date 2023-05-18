@@ -179,7 +179,7 @@ void Sub(inout uint256 A, uint256 B) {
 }
 void Sub(inout uint192 A, uint192 B) {
 	uint64_t x = A.L.Lo - B.L.Lo;
-	uint C = 0;
+	uint64_t C = 0;
 	if (x > A.L.Lo) {C++;}
 	A.L.Lo = x;
 	x = A.L.Hi - (B.L.Hi + C);
@@ -187,6 +187,13 @@ void Sub(inout uint192 A, uint192 B) {
 	if (x > A.L.Hi) {C++;} 
 	A.L.Hi = x;
 
+	A.H = A.H - (B.H + C);
+}
+void Subx(inout uint192 A, uint192 B) {
+	A.L.Lo = A.L.Lo - B.L.Lo;
+	uint64_t C = (((A.L.Lo & B.L.Lo) & 1) + (B.L.Lo >> 1) + (A.L.Lo >> 1)) >> 63;
+	A.L.Hi = A.L.Hi - (B.L.Hi + C);
+	         C = (((A.L.Hi & B.L.Hi) & 1) + (B.L.Hi >> 1) + (A.L.Hi >> 1)) >> 63;
 	A.H = A.H - (B.H + C);
 }
 void Add(inout uint128 A, uint128 B) {
@@ -465,19 +472,19 @@ void main() {
 	// for (int c = 0; c < 150; c++) {
 	while (true) {
 		uint kn = atomicAdd(Kn, 1);
-		k = kn + K;
 		if (K6[kn%(M)] == 1)
 		{
-			// found a viable candidate, go to next phase.
+			k = kn + K;
 			break;
 		}
-		k = 0;
 	}
 
-	// check if something when terribly wrong above.
+	// check if something went terribly wrong above.
 	if (k == 0) {Debug[0]++;return;}
 	// return;
+
 	int top = int(findMSB((p)));
+ 
 	if (tf(k, P, top)) {
 		Found = k;
 		atomicAdd(Debug[1], 1);
