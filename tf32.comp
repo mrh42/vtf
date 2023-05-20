@@ -250,6 +250,7 @@ bool tf(uint96 k, uint p, int top) {
 	return sq.x[0] == 1 && sq.x[1] == 0 && sq.x[2] == 0;
 }
 
+// XXX: still need to remove 64 bit math here...  Need a good Mod(uint96, uint32) function.
 void init(uint k) {
 
 	uint  pm6 = P % M; 
