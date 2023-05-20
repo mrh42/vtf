@@ -199,7 +199,7 @@ bool Modz(uint192 X, uint q) {
 	uint192 Y;
 	uint96 Q, D;
 
-	Q.x[0] = q; Q.x[1] = 0; Q.x[2] = 0;
+	Q.x = uvec3(q, 0, 0);
 	int i = 0;
 
 	while (i < 7 && Cmp(X, Q) > 0) {
@@ -254,7 +254,7 @@ void SqMod(inout uint96 A, uint96 Q, bool doshift, double qinv) {
 bool tf(uint96 k, uint p, int top) {
 	uint96 sq, q, pp;
 	uint192 t;
-	pp.x[0] = p; pp.x[1] = 0; pp.x[2] = 0;
+	pp.x = uvec3(p, 0, 0);
 	Mul192(k, pp, t);
 	q = t.L;
 	Lsh(q);
@@ -285,8 +285,8 @@ void init(uint k) {
 	if (k < M) {
 		uint96 P, K;
 		uint192 Q;
-		P.x[0] = pm6; P.x[1] = 0; P.x[2] = 0;
-		K.x[0] = k; K.x[1] = 0; K.x[2] = 0;
+		P.x = uvec3(pm6, 0, 0);
+		K.x = uvec3(k, 0, 0);
 		Mul192(K, P, Q);
 		// Q.H == 0...
 		Lsh(Q.L);
@@ -322,20 +322,21 @@ void main() {
 	//
 	uint p = uint(P);
 	uint96 k;
+	k.x = uvec3(0, 0, 0);
 	// use for loop when testing, or we get stuck in a nasty loop.
 	// for (int c = 0; c < 150; c++) {
 	while (true) {
 		uint kn = atomicAdd(Kn, 1);
 		if (K6[kn%(M)] == 1)
 		{
-			k.x[0] = K[0]; k.x[1] = K[1];
+			k.x = uvec3(K[0], K[1], K[2]);
 			Add(k, kn);
 			break;
 		}
 	}
 
 	// check if something went terribly wrong above.
-	//if (k == 0) {Debug[0]++;return;}
+	if (Zero(k)) {Debug[0]++;return;}
 	// return;
 
 	int top = int(findMSB((p)));
@@ -343,6 +344,7 @@ void main() {
 	if (tf(k, P, top)) {
 		Found[0] = k.x[0];
 		Found[1] = k.x[1];
+		Found[2] = k.x[2];
 		atomicAdd(Debug[1], 1);
 	}
 }
