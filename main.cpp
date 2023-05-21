@@ -8,21 +8,20 @@
 #include <cmath>
 #include <sys/time.h>
 
-//const uint M = 60060*17;
 // enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
 //
 const uint M = 60060*17*19;
 // total threads to start, check shader, need atleast enough to to initialize the
 // DEVICE_LOCAL arrays below.
 //
-const int np = 8192*64*64;
+const int np = 8192*64*32;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 // it is somewhat slow, compared to DEVICE_LOCAL memory.
 struct Stuff {
-	uint64_t    P;
-	uint64_t    K;
-	uint64_t    Found;
+	uint    P;
+	uint    K[3];
+	uint    Found[3];
 	uint        Debug[2];
 	uint        Init;
 	uint        Kn;
@@ -168,12 +167,9 @@ public:
 	vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
-	if (M > np) {
-		printf("M %d > np %d -- this is an error!\n", M, np);
-		exit(1);
-	}
 	uint64_t t = M * (P%M) * 2;
 	printf("M * PmodM * 2 = %lx\n", t);
+	int loop = 0;
 	while (1) {
 
 		struct timeval t1, t2;
@@ -188,32 +184,41 @@ public:
 		double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
-		{
-				printf("K: %ld P: %ld %.2f%c %d debug:[%d,%d] -- %.2f ms %.2fM/sec\n", p->K, p->P,
-				       100* double(p->K - K1)/ double (K2 - K1), '%',
-				       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
-		}
+		uint64_t k64 = (uint64_t(p->K[1]) << 32) | p->K[0];
 
-		if (p->Found) {
-			printf("M%ld has factor with K=%ld E: %d\n", p->P, p->Found, p->Debug[0]);
-			p->Found = 0;
+		loop++;
+		if (0) {
+			printf("K: %ld P: %d %.2f%c %x debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P,
+			       100* double(k64 - K1)/ double (K2 - K1), '%',
+			       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
+		} else {
+			fprintf(stderr, "K: %ld\r", k64);
+		}
+		uint64_t f64 = (uint64_t(p->Found[1]) << 32) | p->Found[0];
+		if (f64) {
+			printf("M%d has factor with K=%ld E: %d\n", p->P, f64, p->Debug[0]);
+			p->Found[0] = 0;
+			p->Found[1] = 0;
 			mrhDone = 1;
 		}
 		uint64_t x = M * (p->Kn / M);
-		p->K += x;
+		k64 += x;
+		p->K[0] = k64 & 0xffffffff;
+		p->K[1] = k64>>32;
+	
 
 		p->Kn = p->Kn % M;
 		//printf("Kn: %d\n", p->Kn);	
 
-		if (p->K % M != 0) {
-			printf("error --- %ld not 0 mod %d\n", p->K, M);	
+		if (k64 % M != 0) {
+			printf("error --- %ld not 0 mod %d\n", k64, M);
 		} else {
 			//printf("Lost: %ld\n", p->Kn - x);	
 		}
 					       
 		p->Debug[0] = p->Debug[1] = 0;
 
-		if (p->K > K2) {
+		if (k64 > K2) {
 			mrhDone = 1;
 		}
     
@@ -231,28 +236,25 @@ public:
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
 		mrhDone = 0;
-		//p->P = 999983;
-		//p->K = 1;
-		//p->P = 133330459;
-		//p->K = 43473036040;
-		//p->P = 133331333;
-		//p->K = 606233611363280;
-		//p->P = 262359187;
-		//p->K = 36929909828640;
 		printf("--K: %ld\n", K1);
-		while (K1 % (M) != 0) {
-			K1--;
-		}
+		K1 = M * (K1/M);
 		printf("++K: %ld\n", K1);
-		p->K = K1;
+		p->K[0] = K1 & 0xffffffff;
+		p->K[1] = (K1>>32) & 0xffffffff;
+		p->K[2] = 0;
 		p->P = P;
-		p->Found = 0;
+		p->Found[0] = 0;
+		p->Found[1] = 0;
+		p->Found[2] = 0;
 		p->Debug[0] = p->Debug[1] = 0;
 		p->Init = 0;
 		p->Kn = 0;
 
 		runCommandBuffer();  // initialize some shader stuff
+		printf("init: %d\n", p->Kn);
+
 		p->Init = 1;         // now we are done.
+		p->Kn = 0;  // init used this
 		vkUnmapMemory(device, bufferMemory);
 	}
 

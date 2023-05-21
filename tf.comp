@@ -1,11 +1,12 @@
 #version 460
+// We aren't using any of these, but just in case we want to later...
 //#extension GL_ARB_separate_shader_objects : enable
 //#extension GL_ARB_gpu_shader_int64 : enable
 //#extension GL_EXT_debug_printf : enable
 //#extension GL_KHR_shader_subgroup_vote : enable
 //#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
 //#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+//#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 //#extension GL_EXT_shader_atomic_int64: enable
 
 //
@@ -15,10 +16,13 @@
 //   glslc --target-env=vulkan1.3 tf.comp -o comp.spv
 // glslc might produce slightly faster SPIR-C for the Radeon VII
 //
+// update: 32-bit version doesn't need to be compiled with 1.3, just use:
+//   glslangValidator  -V tf.comp
+//
 // Installing the 'vulkan-amdgpu' package will result in a significant (2.5x) performance increase.
+// also, maybe the difference isn't so much when not using uint64_t math.
 //
 
-// number of threads
 
 layout (local_size_x = 64) in;
 
@@ -28,12 +32,13 @@ layout (local_size_x = 64) in;
 // factor, but not all of the found factors.
 layout(binding = 0) buffer buf
 {	
-	uint64_t    P;       // input from CPU side
-	uint64_t    K;       // base K input from CPU side
-	uint64_t    Found;   // output to tell the CPU we found a K resulting in a factor
-	uint        Debug[2];// output only used for debugging
-	uint        Init;    // If this is 0, then we setup our tables once.
-	uint        Kn;      // K + Kn represents the factor to be tested, threads get a Kn atomicAdd(Kn, 1)
+	uint        P;          // input from CPU side
+	uint        K[3];       // base K input from CPU side
+	uint        Found[3];   // output to tell the CPU we found a K resulting in a factor
+	uint        Debug[2];   // output only used for debugging
+	uint        Init;       // If this is 0, then we setup our tables once.
+	uint        Kn;         // input/output: K + Kn represents the factor to be tested, threads get a Kn atomicAdd(Kn, 1)
+	                        // we also use the to tell the CPU side how much work we finished.
 
 };
 
@@ -46,342 +51,188 @@ layout(binding = 0) buffer buf
 // This is allocated in DEVICE_LOCAL memory, not shared with host.  See CPU code to see how this is allocated.
 // This is much faster to access from the shader, especially if the GPU is in a PCIx1 slot.
 // using an int per flag is wasteful, but seems to be fastest.  bool is much slower.
+// This is about 74MB, not not much really.
 layout(binding = 1) buffer buf2
 {
 	restrict int       K6[M];
 };
 
-struct uint128 {
-	uint64_t Hi, Lo;
-};
-struct uint256 {
-	uint128 H, L;
-};
-struct uint192 {
-	uint64_t H;
-	uint128 L;
+struct uint96 {
+	uvec3 x;
 };
 
-void Set(inout uint256 A, uint128 B) {
-	A.L = B;
-	A.H.Lo = 0;
-	A.H.Hi = 0;
+struct uint192 {
+	uint96 H;
+	uint96 L;
+};
+bool Zero(uint96 A) {
+	return A.x[0] == 0 && A.x[1] == 0 && A.x[2] == 0;
 }
-void Lsh(inout uint128 A) {
-	uint64_t c = A.Lo & (uint64_t(1) << 63);
-	A.Lo <<= 1;
-	A.Hi <<= 1;
-	A.Hi |= c >> 63;
+bool Zero(uint192 A) {
+	return Zero(A.L) && Zero(A.H);
 }
-void Lsh(inout uint256 A) {
-	
-	uint64_t c = A.L.Hi & (uint64_t(1) << 63);
-	Lsh(A.L);
-	Lsh(A.H);
-	A.H.Lo |= c >> 63;
+
+void Lsh(inout uint96 A) {
+	uint c0 = A.x[0] & (uint(1) << 31);
+	uint c1 = A.x[1] & (uint(1) << 31);
+	A.x[0] <<= 1;
+	A.x[1] <<= 1;
+	A.x[1] |= c0 >> 31;
+	A.x[2] <<= 1;
+	A.x[2] |= c1 >> 31;
 }
 void Lsh(inout uint192 A) {
 	
-	uint64_t c = A.L.Hi & (uint64_t(1) << 63);
+	uint c = A.L.x[2] & (uint(1) << 31);
 	Lsh(A.L);
-	A.H <<= 1;
-	A.H |= c >> 63;
+	Lsh(A.H);
+	A.H.x[0] |= c >> 31;
 }
 
-void Rsh(inout uint128 A) {
-	uint64_t b = A.Hi & 1l;
-	A.Hi >>= 1;
-	A.Lo >>= 1;
-	A.Lo |= b << 63;
-}
-void Rsh(inout uint192 A) {
-	Rsh(A.L);
-	uint64_t b = A.H & 1l;
-	A.H >>= 1;
-	A.L.Hi |= b << 63;
-	
-}
-void Rsh(inout uint256 A) {
-	Rsh(A.L);
-	uint64_t b = A.H.Lo & 1l;
-	Rsh(A.H);
-	A.L.Hi |= b << 63;
-	
-}
-int Cmp(uint128 A, uint64_t B) {
-	if (A.Hi != 0) {return 1;}
-	if (A.Lo > B) {return 1;}
-	if (A.Lo < B) {return -1;}
-	return 0;
-	
-}
-int Cmp(uint128 A, uint128 B) {
-	if (A.Hi > B.Hi || (A.Hi == B.Hi && A.Lo > B.Lo)) {return 1;}
-	if (A.Hi < B.Hi || (A.Hi == B.Hi && A.Lo < B.Lo)) {return -1;}
+int Cmp(uint96 A, uint96 B) {
+	if (A.x[2] > B.x[2]) {return 1;}
+	if (A.x[2] < B.x[2]) {return -1;}
+	if (A.x[1] > B.x[1]) {return 1;}
+	if (A.x[1] < B.x[1]) {return -1;}
+	if (A.x[0] > B.x[0]) {return 1;}
+	if (A.x[0] < B.x[0]) {return -1;}
 	return 0;
 }
-int Cmp(uint192 A, uint128 B) {
-	if (A.H != 0) {
+int Cmp(uint192 A, uint96 B) {
+	if (Zero(A.H)) {
+		return Cmp(A.L, B);
+	} else {
+		if (Zero(B)) {
+			return 0;
+		}
 		return 1;
 	}
-	return Cmp(A.L, B);
 }
 int Cmp(uint192 A, uint192 B) {
-	if (A.H == B.H) {
-		return Cmp(A.L, B.L);
+	int c = Cmp(A.H, B.H);
+	if (c != 0) {
+		return c;
 	}
-	if (A.H > B.H) {
-		return 1;
-	}
-	if (A.H < B.H) {
-		return -1;
-	}
-}
-int Cmp(uint256 A, uint128 B) {
-	if (A.H.Hi != 0 || A.H.Lo != 0) {
-		return 1;
-	}
-	return Cmp(A.L, B);
-}
-int Cmp(uint256 A, uint256 B) {
-	int d = Cmp(A.H, B.H);
-	if (d != 0) { return d; }
 	return Cmp(A.L, B.L);
 }
-void Inc(inout uint128 A) {
-	A.Lo += 1;
-	if (A.Lo == 0) {
-		A.Hi += 1;
+void Inc(inout uint96 A) {
+	A.x[0] += 1;
+	if (A.x[0] == 0) {
+		A.x[1] += 1;
+		if (A.x[1] == 0) {
+			A.x[2] += 1;
+		}
 	}
 }
-void Sub(inout uint128 A, uint128 B) {
-	uint64_t x = A.Lo - B.Lo;
-	uint64_t C = (((x & B.Lo) & 1l) + (B.Lo >> 1) + (x >> 1)) >> 63;
-	A.Hi = A.Hi - (B.Hi + C);
-	A.Lo = x;
-}
-void Sub(inout uint256 A, uint256 B) {
-	uint64_t x = A.L.Lo - B.L.Lo;
-	uint C = 0;
-	if (x > A.L.Lo) {C++;}
-	A.L.Lo = x;
-	x = A.L.Hi - (B.L.Hi + C);
-	C = 0;
-	if (x > A.L.Hi) {C++;} 
-	A.L.Hi = x;
-
-	x = A.H.Lo - (B.H.Lo + C);
-	C = 0;
-	if (x > A.H.Lo) {C++;}
-	A.H.Lo = x;
-
-	A.H.Hi = A.H.Hi - (B.H.Hi + C);
+void Add(inout uint96 A, uint B) {
+	uint C;
+	A.x[0] = uaddCarry(A.x[0], B, C);
+	A.x[1] = uaddCarry(A.x[1], C, C);
+	A.x[2] += C;
 }
 void Sub(inout uint192 A, uint192 B) {
-	uint64_t x = A.L.Lo - B.L.Lo;
-	uint64_t C = 0;
-	if (x > A.L.Lo) {C++;}
-	A.L.Lo = x;
-	x = A.L.Hi - (B.L.Hi + C);
-	C = 0;
-	if (x > A.L.Hi) {C++;} 
-	A.L.Hi = x;
 
-	A.H = A.H - (B.H + C);
-}
-void Subx(inout uint192 A, uint192 B) {
-	A.L.Lo = A.L.Lo - B.L.Lo;
-	uint64_t C = (((A.L.Lo & B.L.Lo) & 1) + (B.L.Lo >> 1) + (A.L.Lo >> 1)) >> 63;
-	A.L.Hi = A.L.Hi - (B.L.Hi + C);
-	         C = (((A.L.Hi & B.L.Hi) & 1) + (B.L.Hi >> 1) + (A.L.Hi >> 1)) >> 63;
-	A.H = A.H - (B.H + C);
-}
-void Add(inout uint128 A, uint128 B) {
-	uint64_t x = A.Lo + B.Lo;
-	uint64_t C = 0;
-	if (x < A.Lo) {C++;}
-	A.Hi = A.Hi + (B.Hi + C);
-	A.Lo = x;
-}
-bool Zero(uint128 A) {
-	return A.Lo == 0 && A.Hi == 0;
-}
-
-void multiply64to128(uint64_t x, uint64_t y, out uint128 r)
-{
-	uint64_t lowbits = 0xfffffffful;
-	u64vec4 x4 = u64vec4(x >> 32, x & lowbits, x >> 32, x & lowbits);
-	u64vec4 y4 = u64vec4(y >> 32, y >> 32, y & lowbits, y & lowbits);
-	u64vec4 p = x4 * y4;
-
-	uint64_t middle = p[2] + (p[3] >> 32) + (p[1] & lowbits);
-	r.Hi = p[0] + (middle >> 32) + (p[1] >> 32);
-	r.Lo = (middle << 32) | (p[3] & lowbits);
-
-}
-
-//
-// Used to compute Q = 2*P*K+1 for each K, and for the 256 multiplies below.
-//
-void multiply64to128x(uint64_t lhs, uint64_t rhs, inout uint128 r) {
-
-	/* First calculate all of the cross products. */
-	uint64_t lo_lo = (lhs & 0xFFFFFFFFul) * (rhs & 0xFFFFFFFFul);
-	uint64_t hi_lo = (lhs >> 32)        * (rhs & 0xFFFFFFFFul);
-	uint64_t lo_hi = (lhs & 0xFFFFFFFFul) * (rhs >> 32);
-	uint64_t hi_hi = (lhs >> 32)        * (rhs >> 32);
-
-	/* Now add the products together. These will never overflow. */
-	uint64_t cross = (lo_lo >> 32) + (hi_lo & 0xFFFFFFFFul) + lo_hi;
-	uint64_t upper = (hi_lo >> 32) + (cross >> 32)        + hi_hi;
-
-	r.Hi = upper;
-	r.Lo = (cross << 32) | (lo_lo & 0xFFFFFFFFul);
-}
-void Sq256(uint128 A, inout uint256 X) {
-	multiply64to128(A.Hi, A.Hi, X.H);
-	multiply64to128(A.Lo, A.Lo, X.L);
-
-	uint128 T;
-	multiply64to128(A.Hi, A.Lo, T);
-	Lsh(T);
-
-	X.L.Hi += T.Lo;
-	if (X.L.Hi < T.Lo) {
-		Inc(X.H);
-	}
-	X.H.Lo += T.Hi;
-	if (X.H.Lo < T.Hi) {
-		X.H.Hi++;
-	}
-}
-void Mul192(uint128 A, uint128 B, out uint192 R) {
-	uint64_t lb = 0xfffffffful;
-	uint64_t x00 = (A.Lo & lb) * (B.Lo & lb);
-	uint64_t x01 = (A.Lo & lb) * (B.Lo >> 32);
-	uint64_t x02 = (A.Lo & lb) * (B.Hi & lb);
-	uint64_t x10 = (A.Lo >> 32) * (B.Lo & lb);
-	uint64_t x11 = (A.Lo >> 32) * (B.Lo >> 32);
-	uint64_t x12 = (A.Lo >> 32) * (B.Hi & lb);
-	uint64_t x20 = (A.Hi & lb) * (B.Lo & lb);
-	uint64_t x21 = (A.Hi & lb) * (B.Lo >> 32);
-	uint64_t x22 = (A.Hi & lb) * (B.Hi & lb);
-
-	uint64_t m = (x00 >> 32) + x01 + (x10 & lb);
-	uint64_t n = x02 + x11 + x20 + (x10 >> 32) + (m >> 32);
-	uint64_t o = x12 + x21 + (n >> 32);
-	R.L.Lo = (x00 & lb) | (m << 32);
-	R.L.Hi = (n & lb) | (o << 32);
-	R.H = (o >> 32) + x22;
-}
-void Sq192(uint128 A, out uint192 R) {
-	uint64_t lb = 0xfffffffful;
-	uint64_t alh = A.Lo >> 32;
-	uint64_t all = A.Lo & lb;
-	uint64_t ahl = A.Hi & lb;
-	uint64_t x00 = all * all;
-	uint64_t x01 = (all) * (alh);
-	uint64_t x02 = (all) * (ahl);
-	uint64_t x11 = (alh) * (alh);
-	uint64_t x12 = (alh) * (ahl);
-	uint64_t x22 = (ahl) * (ahl);
-
-	uint64_t m = (x00 >> 32) + x01 + (x01 & lb);
-	uint64_t n = x02 + x11 + x02 + (x01 >> 32) + (m >> 32);
-	uint64_t o = x12 + x12  + (n >> 32);
-	R.L.Lo = (x00 & lb) | (m << 32);
-	R.L.Hi = (n & lb) | (o << 32);
-	R.H = (o >> 32) + x22;
-}
-
-void Mul256(uint128 A, uint128 B, inout uint256 X) {
-	multiply64to128(A.Hi, B.Hi, X.H);
-	multiply64to128(A.Lo, B.Lo, X.L);
-
-	uint128 T;
-	multiply64to128(B.Hi, A.Lo, T);
-
-	X.L.Hi += T.Lo;
-	if (X.L.Hi < T.Lo) {
-		Inc(X.H);
-	}
-	X.H.Lo += T.Hi;
-	if (X.H.Lo < T.Hi) {
-		X.H.Hi++;
-	}
-
-	multiply64to128(A.Hi, B.Lo, T);
-
-	X.L.Hi += T.Lo;
-	if (X.L.Hi < T.Lo) {
-		Inc(X.H);
-	}
-	X.H.Lo += T.Hi;
-	if (X.H.Lo < T.Hi) {
-		X.H.Hi++;
-	}
+	uint c;
+	/// XXX this doesn't work, what about +c that overflows?  rare, but still fix it.
+	A.L.x[0] = usubBorrow(A.L.x[0], B.L.x[0], c);
+	A.L.x[1] = usubBorrow(A.L.x[1], B.L.x[1]+c, c);
+	A.L.x[2] = usubBorrow(A.L.x[2], B.L.x[2]+c, c);	
+	A.H.x[0] = usubBorrow(A.H.x[0], B.H.x[0]+c, c);	
+	A.H.x[1] = usubBorrow(A.H.x[1], B.H.x[1]+c, c);	
+	A.H.x[2] = usubBorrow(A.H.x[2], B.H.x[2]+c, c);	
 }
 
 
 // 2^64, 2^128 and 2^192
+const   double p32 =  4294967296.0lf;
 const 	double p64 =  18446744073709551616.0lf;
+const   double p96 =  79228162514264337593543950336.0lf;
 const	double p128 = 340282366920938463463374607431768211456.0lf;
-const	double p192 = 6277101735386680763835789423207666416102355444464034512896.0lf;
+const   double p160 = 1461501637330902918203684832716283019655932542976.0lf;
+//const	double p192 = 6277101735386680763835789423207666416102355444464034512896.0lf;
 
-double toF(uint128 A) {
-	return double(A.Lo) + double(A.Hi) * p64;
+double toF(uint96 A) {
+	return double(A.x[0]) + double(A.x[1]) * p32 + double(A.x[2]) * p64;
 }
 double toF(uint192 A) {
-
-	return double(A.L.Lo) + double(A.L.Hi)*p64 + double(A.H)*p128;
+	return double(A.L.x[0]) + double(A.L.x[1]) * p32 + double(A.L.x[2]) * p64 +
+		double(A.H.x[0]) * p96 + double(A.H.x[1]) * p128 + double(A.H.x[2]) * p160;
 }
-double toF(uint256 A) {
-
-	return double(A.L.Lo) + double(A.L.Hi)*p64 + double(A.H.Lo)*p128 + double(A.H.Hi)*p192;
-}
-void fto128(double f, out uint128 A) {
-	A.Hi = uint64_t(f / p64);
-	A.Lo = uint64_t(f - double(A.Hi) * p64);
+void fto96(double f, out uint96 A) {
+	A.x[2] = uint(f / p64);
+	A.x[1] = uint((f - double(A.x[2]) * p64) / p32);
+	A.x[0] = uint(f - (double(A.x[2]) * p64 + double(A.x[1]) * p32));
 }
 
-// Floating point version
-void SqMod(inout uint128 A, uint128 Q, bool doshift, double qinv) {
-	uint256 X, Y;
-	uint128 D;
+void Mul192(inout uint96 A, uint96 B, out uint192 R)
+{
+	uint h[9], l[9];
+	uint c1, c2, c;
 
-	Sq256(A, X);
-	if (doshift) {
-		Lsh(X);
-	}
+	umulExtended(A.x[0], B.x[0], h[0], l[0]);
+	umulExtended(A.x[0], B.x[1], h[1], l[1]);
+	umulExtended(A.x[0], B.x[2], h[2], l[2]);
+	umulExtended(A.x[1], B.x[0], h[3], l[3]);
+	umulExtended(A.x[1], B.x[1], h[4], l[4]);
+	umulExtended(A.x[1], B.x[2], h[5], l[5]);
+	umulExtended(A.x[2], B.x[0], h[6], l[6]);
+	umulExtended(A.x[2], B.x[1], h[7], l[7]);
+	umulExtended(A.x[2], B.x[2], h[8], l[8]);
 
-	int i = 0; // limit to 10, in case we have a bug, don't want to get stuck...
+	R.L.x[0] = l[0];
+	R.L.x[1] = uaddCarry(h[0], l[1], c1);	c = c1;
+	R.L.x[1] = uaddCarry(R.L.x[1], l[3], c1);	c += c1;
 
-	// Using floating point, take a guess at a number D such that we could subtract D*Q to leave our remander.
-	// Always guess D a little low, and refine our guess as we get closer.
-	// normally takes 2 passes.
-	while (i < 10 && Cmp(X, Q) > 0) {
+	R.L.x[2] = uaddCarry(l[2], c, c1);	c = c1;
+	R.L.x[2] = uaddCarry(R.L.x[2], h[1], c1);	c += c1;
+	R.L.x[2] = uaddCarry(R.L.x[2], h[3], c1);	c += c1;
+	R.L.x[2] = uaddCarry(R.L.x[2], l[4], c1);	c += c1;
+	R.L.x[2] = uaddCarry(R.L.x[2], l[6], c1);	c += c1;
 
-		double x = toF(X);
-		fto128(x*qinv, D);
+	R.H.x[0] = uaddCarry(l[5], c, c1);	c = c1;
+	R.H.x[0] = uaddCarry(R.H.x[0], h[2], c1);	c += c1;
+	R.H.x[0] = uaddCarry(R.H.x[0], h[4], c1);	c += c1;
+	R.H.x[0] = uaddCarry(R.H.x[0], l[7], c1);	c += c1;
+	R.H.x[0] = uaddCarry(R.H.x[0], h[6], c1);	c += c1;
+
+	R.H.x[1] = uaddCarry(h[5], c, c1);	c = c1;
+	R.H.x[1] = uaddCarry(R.H.x[1], l[8], c1);	c += c1;
+	R.H.x[1] = uaddCarry(R.H.x[1], h[7], c1);	c += c1;
+	R.H.x[2] = uaddCarry(h[8], c, c1);
+}
+
+// not fast, only for init.
+bool Modz(uint192 X, uint q) {
+	double qinv = 0.99999999999999 / double(q);
+	uint192 Y;
+	uint96 Q, D;
+
+	Q.x = uvec3(q, 0, 0);
+	int i = 0;
+
+	while (i < 7 && Cmp(X, Q) > 0) {
+		double xqi = toF(X)*qinv;
+		fto96(xqi, D);
 		if (Zero(D)) {
-			D.Lo = 1;
-		}		
-		Mul256(D, Q, Y);
-
+			D.x[0] = 1;
+		}
+		Mul192(D, Q, Y);
 		Sub(X, Y);
 		i++;
 	}
-	//if (i > 3) {Debug[1]++;}
-	A = X.L;
+	if (Cmp(X, Q) == 0 || Zero(X)) {
+		return true;
+	}
+	return false;
 }
-// Floating point version
-void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
-	uint192 X, Y;
-	uint128 D;
-	uint192 QQ;
-	QQ.H = 0; QQ.L.Lo = Q.Lo; QQ.L.Hi = Q.Hi;
 
-	Sq192(A, X);
+
+// Floating point version
+void SqMod(inout uint96 A, uint96 Q, bool doshift, double qinv) {
+	uint192 X, Y;
+	uint96 D;
+
+	Mul192(A, A, X);
 	if (doshift) {
 		Lsh(X);
 	}
@@ -394,9 +245,9 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 	//
 	while (i < 7 && Cmp(X, Q) > 0) {
 		double xqi = toF(X)*qinv;
-		fto128(xqi, D);
+		fto96(xqi, D);
 		if (Zero(D)) {
-			D.Lo = 1;
+			D.x[0] = 1;
 		}
 		Mul192(D, Q, Y);
 		Sub(X, Y);
@@ -408,38 +259,56 @@ void SqMod9(inout uint128 A, uint128 Q, bool doshift, double qinv) {
 
 
 
-bool tf(uint64_t k, uint64_t p, int top) {
-	uint128 sq, q;
-	multiply64to128(k, p, q);
+bool tf(uint96 k, uint p, int top) {
+	uint96 sq, q, pp;
+	uint192 t;
+	pp.x = uvec3(p, 0, 0);
+	Mul192(k, pp, t);
+	q = t.L;
 	Lsh(q);
 	Inc(q);
 
         // Make our 1/q just a tiny bit too small, so we don't over estimate,
         // but not so small as to need extra passes.
 	double qinv = 0.99999999999999 / toF(q);
-	//double qinv =   0.9999999999999994 / toF(q);
+	//double qinv = 0.9999999999999994 / toF(q);
 	//double qinv = 1.0 / toF(q);
 
 	// Do the TF math: Starting with 1, repeatedly square,
 	//  remove the top bit of the exponent and if 1 multiply squared value by 2,
 	//  then compute mod Q.
-	sq.Lo = 1; sq.Hi = 0;
+	sq.x = uvec3(1, 0, 0);
 	for (int b = top; b >= 0; b--) {
-		bool bb = (p & (1l << b)) != 0;
-		SqMod9(sq, q, bb, qinv);
+		bool bb = (p & (1 << b)) != 0;
+		SqMod(sq, q, bb, qinv);
 	}
 	// If the result is 1, then we found a factor.
-	return sq.Lo == 1 && sq.Hi == 0;
+	return sq.x[0] == 1 && sq.x[1] == 0 && sq.x[2] == 0;
 }
 
-void init(uint k) {
+void init() {
 
-	uint64_t pm6 = P % M; 
+	uint  pm6 = P % M;
 
-	if (k < M) {
-		uint64_t q = 2 * pm6 * k + 1;
-		//if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0)) {
-		if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) || (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {
+	// CPU calls us with Kn==0, we want k = 0; k < M; so keep allocating k's, until Kn is too big.
+	while (true) {
+		uint k = atomicAdd(Kn, 1);
+		if (k > M) {
+			return;
+		}
+		k--; // start at zero
+
+		uint96 P, K;
+		uint192 Q;
+		P.x = uvec3(pm6, 0, 0);
+		K.x = uvec3(k, 0, 0);
+		Mul192(K, P, Q);
+		// Q.H == 0...
+		Lsh(Q.L);
+		Inc(Q.L);
+
+		if (((Q.L.x[0]&7) == 3) || ((Q.L.x[0]&7) == 5) || Modz(Q, 3) || Modz(Q, 5) ||
+		    Modz(Q,7) || Modz(Q, 11) || Modz(Q, 13) || Modz(Q, 17) || Modz(Q, 19)) {
 			K6[k] = 0;
 		} else {
 			K6[k] = 1;
@@ -448,45 +317,49 @@ void init(uint k) {
 
 }
 
+
 void main() {
 
 	// When called with Init == 0, we need to initialize ourselves and return.
 	if (Init == 0) {
-		// Which thread are we?  Use this as a K-value in init, using a bunch of threads to
-		// do the work.
-		uint I = gl_GlobalInvocationID.x;
-		init(I);
+		init();
 		return;
 	}
 
 	//
 	// K is the base starting value for this invocation.  Each thread grabs a unique Kn,
 	// then tests k = (K + Kn).
-	// K is 64bit and Kn is 32bit.  64bit modulo is a bit slow.
 	// The cpu always calls us with K == 0 mod M. So we can use Kn%M vs K%M.
-	// We do have to be careful here that Kn doesn't overflow.
+	// But, we do have to be careful here that Kn doesn't overflow.
 	//
 	uint p = uint(P);
-	uint64_t k = 0;
+	uint96 k;
+	k.x = uvec3(0, 0, 0);
 	// use for loop when testing, or we get stuck in a nasty loop.
 	// for (int c = 0; c < 150; c++) {
 	while (true) {
 		uint kn = atomicAdd(Kn, 1);
 		if (K6[kn%(M)] == 1)
 		{
-			k = kn + K;
+			k.x = uvec3(K[0], K[1], K[2]);
+			Add(k, kn);
 			break;
 		}
 	}
 
 	// check if something went terribly wrong above.
-	if (k == 0) {Debug[0]++;return;}
+	// We didn't find a K to test at all?
+	if (Zero(k)) {Debug[0]++;return;}
 	// return;
 
 	int top = int(findMSB((p)));
  
 	if (tf(k, P, top)) {
-		Found = k;
+		// return the 96-bit K
+		Found[0] = k.x[0];
+		Found[1] = k.x[1];
+		Found[2] = k.x[2];
+		// How many did we find?
 		atomicAdd(Debug[1], 1);
 	}
 }
