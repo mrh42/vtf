@@ -8,7 +8,6 @@
 #include <cmath>
 #include <sys/time.h>
 
-//const uint M = 60060*17;
 // enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
 //
 const uint M = 60060*17*19;
