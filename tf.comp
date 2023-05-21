@@ -130,7 +130,7 @@ void Add(inout uint96 A, uint B) {
 	A.x[1] = uaddCarry(A.x[1], C, C);
 	A.x[2] += C;
 }
-void Sub(inout uint192 A, uint192 B) {
+void Subxx(inout uint192 A, uint192 B) {
 
 	uint c;
 	/// XXX this doesn't work, what about +c that overflows?  rare, but still fix it.
@@ -140,6 +140,25 @@ void Sub(inout uint192 A, uint192 B) {
 	A.H.x[0] = usubBorrow(A.H.x[0], B.H.x[0]+c, c);	
 	A.H.x[1] = usubBorrow(A.H.x[1], B.H.x[1]+c, c);	
 	A.H.x[2] = usubBorrow(A.H.x[2], B.H.x[2]+c, c);	
+}
+void Sub(inout uint192 A, uint192 B) {
+
+	uint c, c1;
+	
+	A.L.x[0] = usubBorrow(A.L.x[0], B.L.x[0], c);
+	A.L.x[1] = usubBorrow(A.L.x[1], c, c1);
+	A.L.x[1] = usubBorrow(A.L.x[1], B.L.x[1], c);
+
+	A.L.x[2] = usubBorrow(A.L.x[2], c+c1, c);
+	A.L.x[2] = usubBorrow(A.L.x[2], B.L.x[2], c1);
+
+	A.H.x[0] = usubBorrow(A.H.x[0], c+c1, c);
+	A.H.x[0] = usubBorrow(A.H.x[0], B.H.x[0], c1);	
+
+	A.H.x[1] = usubBorrow(A.H.x[1], c+c1, c);	
+	A.H.x[1] = usubBorrow(A.H.x[1], B.H.x[1], c1);	
+
+	A.H.x[2] = usubBorrow(A.H.x[2], B.H.x[2]+c+c1, c);	
 }
 
 

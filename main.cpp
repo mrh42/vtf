@@ -22,9 +22,9 @@ struct Stuff {
 	uint    P;
 	uint    K[3];
 	uint    Found[3];
-	uint        Debug[2];
-	uint        Init;
-	uint        Kn;
+	uint    Debug[2];
+	uint    Init;
+	uint    Kn;
 
 };
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
@@ -187,7 +187,7 @@ public:
 		uint64_t k64 = (uint64_t(p->K[1]) << 32) | p->K[0];
 
 		loop++;
-		if (0) {
+		if (1) {
 			printf("K: %ld P: %d %.2f%c %x debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P,
 			       100* double(k64 - K1)/ double (K2 - K1), '%',
 			       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
