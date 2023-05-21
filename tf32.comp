@@ -278,11 +278,16 @@ bool tf(uint96 k, uint p, int top) {
 	return sq.x[0] == 1 && sq.x[1] == 0 && sq.x[2] == 0;
 }
 
-void init(uint k) {
+void init() {
 
 	uint  pm6 = P % M;
 
-	if (k < M) {
+	while (true) {
+		uint k = atomicAdd(Kn, 1);
+		if (k > M) {
+			return;
+		}
+		k--;
 		uint96 P, K;
 		uint192 Q;
 		P.x = uvec3(pm6, 0, 0);
@@ -292,7 +297,8 @@ void init(uint k) {
 		Lsh(Q.L);
 		Inc(Q.L);
 
-		if (((Q.L.x[0]&7) == 3) || ((Q.L.x[0]&7) == 5) || Modz(Q, 3) || Modz(Q, 5) || Modz(Q,7) || Modz(Q, 11) || Modz(Q, 13) || Modz(Q, 17) || Modz(Q, 19)) {
+		if (((Q.L.x[0]&7) == 3) || ((Q.L.x[0]&7) == 5) || Modz(Q, 3) || Modz(Q, 5) ||
+		    Modz(Q,7) || Modz(Q, 11) || Modz(Q, 13) || Modz(Q, 17) || Modz(Q, 19)) {
 			K6[k] = 0;
 		} else {
 			K6[k] = 1;
@@ -308,15 +314,14 @@ void main() {
 	if (Init == 0) {
 		// Which thread are we?  Use this as a K-value in init, using a bunch of threads to
 		// do the work.
-		uint I = gl_GlobalInvocationID.x;
-		init(I);
+		//uint I = gl_GlobalInvocationID.x;
+		init();
 		return;
 	}
 
 	//
 	// K is the base starting value for this invocation.  Each thread grabs a unique Kn,
 	// then tests k = (K + Kn).
-	// K is 64bit and Kn is 32bit.  64bit modulo is a bit slow.
 	// The cpu always calls us with K == 0 mod M. So we can use Kn%M vs K%M.
 	// We do have to be careful here that Kn doesn't overflow.
 	//

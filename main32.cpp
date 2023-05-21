@@ -15,7 +15,7 @@ const uint M = 60060*17*19;
 // total threads to start, check shader, need atleast enough to to initialize the
 // DEVICE_LOCAL arrays below.
 //
-const int np = 8192*64*64;
+const int np = 8192*64*32;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 // it is somewhat slow, compared to DEVICE_LOCAL memory.
@@ -168,10 +168,6 @@ public:
 	vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
-	if (M > np) {
-		printf("M %d > np %d -- this is an error!\n", M, np);
-		exit(1);
-	}
 	uint64_t t = M * (P%M) * 2;
 	printf("M * PmodM * 2 = %lx\n", t);
 	while (1) {
@@ -190,11 +186,9 @@ public:
 
 		uint64_t k64 = (uint64_t(p->K[1]) << 32) | p->K[0];
 
-		{
-				printf("K: %ld P: %d %.2f%c %d debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P,
-				       100* double(k64 - K1)/ double (K2 - K1), '%',
-				       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
-		}
+		printf("K: %ld P: %d %.2f%c %x debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P,
+		       100* double(k64 - K1)/ double (K2 - K1), '%',
+		       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
 
 		uint64_t f64 = (uint64_t(p->Found[1]) << 32) | p->Found[0];
 		if (f64) {
@@ -238,18 +232,8 @@ public:
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
 		mrhDone = 0;
-		//p->P = 999983;
-		//p->K = 1;
-		//p->P = 133330459;
-		//p->K = 43473036040;
-		//p->P = 133331333;
-		//p->K = 606233611363280;
-		//p->P = 262359187;
-		//p->K = 36929909828640;
 		printf("--K: %ld\n", K1);
-		while (K1 % (M) != 0) {
-			K1--;
-		}
+		K1 = M * (K1/M);
 		printf("++K: %ld\n", K1);
 		p->K[0] = K1 & 0xffffffff;
 		p->K[1] = (K1>>32) & 0xffffffff;
@@ -263,7 +247,10 @@ public:
 		p->Kn = 0;
 
 		runCommandBuffer();  // initialize some shader stuff
+		printf("init: %d\n", p->Kn);
+
 		p->Init = 1;         // now we are done.
+		p->Kn = 0;  // init used this
 		vkUnmapMemory(device, bufferMemory);
 	}
 
