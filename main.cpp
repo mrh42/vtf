@@ -10,11 +10,14 @@
 
 // enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
 //
-const uint M = 60060*17*19;
+//const uint M = 60060*17*19;
+const uint M = 60060;
+uint Kx[M];
+
 // total threads to start, check shader, need atleast enough to to initialize the
 // DEVICE_LOCAL arrays below.
 //
-const int np = 8192*64*32;
+const int np = 8192*64*16;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 // it is somewhat slow, compared to DEVICE_LOCAL memory.
@@ -24,13 +27,14 @@ struct Stuff {
 	uint    Found[3];
 	uint    Debug[2];
 	uint    Init;
-	uint    Kn;
+	uint    M;
+	//uint    Kx[M];
 
 };
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
 // This is much to access faster from the shader, especially if the GPU is in a PCIx1 slot.
 struct Stuff2 {
-	uint        K6[M];
+	uint        K6[M];  // unused in this current version
 };
 
 uint64_t K1, K2, P;
@@ -169,30 +173,26 @@ public:
 
 	uint64_t t = M * (P%M) * 2;
 	printf("M * PmodM * 2 = %lx\n", t);
-	int loop = 0;
+	uint N = 0;
+	uint64_t k64 = K1;
 	while (1) {
 
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
-		
-	
-		runCommandBuffer();
 
+		runCommandBuffer();
 
 		gettimeofday(&t2, NULL);
 		
 		double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
-		uint64_t k64 = (uint64_t(p->K[1]) << 32) | p->K[0];
-
-		loop++;
-		if (1) {
-			printf("K: %ld P: %d %.2f%c %x debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P,
+		if (N % 100 == 0) {
+		//if (1) {
+			double lb2 = log2(double(k64) * double(P) * 2.0);
+			printf("K: %ld P: %d %.1f %.2f%c %d debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P, lb2,
 			       100* double(k64 - K1)/ double (K2 - K1), '%',
-			       p->Kn, p->Debug[0], p->Debug[1], elapsedTime, (p->Kn) / (1000*elapsedTime));
-		} else {
-			fprintf(stderr, "K: %ld\r", k64);
+			       N, p->Debug[0], p->Debug[1], elapsedTime, (np) / (1000*elapsedTime));
 		}
 		uint64_t f64 = (uint64_t(p->Found[1]) << 32) | p->Found[0];
 		if (f64) {
@@ -201,22 +201,21 @@ public:
 			p->Found[1] = 0;
 			mrhDone = 1;
 		}
-		uint64_t x = M * (p->Kn / M);
-		k64 += x;
-		p->K[0] = k64 & 0xffffffff;
-		p->K[1] = k64>>32;
-	
 
-		p->Kn = p->Kn % M;
-		//printf("Kn: %d\n", p->Kn);	
-
-		if (k64 % M != 0) {
-			printf("error --- %ld not 0 mod %d\n", k64, M);
-		} else {
-			//printf("Lost: %ld\n", p->Kn - x);	
+		N++;
+		while (N != M && Kx[N] == 0)
+		{
+		 	N++;
 		}
-					       
-		p->Debug[0] = p->Debug[1] = 0;
+		if (N == M) {
+			k64 += uint64_t(M) * uint64_t(np);
+			N = 0;
+		}
+		p->K[0] = (k64+N) & 0xffffffff;
+		p->K[1] = (k64 + N)>>32;
+		p->K[2] = 0;
+						       
+		//p->Debug[0] = p->Debug[1] = 0;
 
 		if (k64 > K2) {
 			mrhDone = 1;
@@ -232,6 +231,8 @@ public:
     }
 
  	void mrhInit() {
+
+		
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
@@ -248,14 +249,27 @@ public:
 		p->Found[2] = 0;
 		p->Debug[0] = p->Debug[1] = 0;
 		p->Init = 0;
-		p->Kn = 0;
+		p->M = M;
 
-		runCommandBuffer();  // initialize some shader stuff
-		printf("init: %d\n", p->Kn);
+		//runCommandBuffer();  // initialize some shader stuff
+		//printf("init: %d\n", p->Kn);
 
 		p->Init = 1;         // now we are done.
-		p->Kn = 0;  // init used this
 		vkUnmapMemory(device, bufferMemory);
+
+
+		double ones = 0;
+		for (uint64_t i = 0; i < M; i++) {
+			uint64_t q = uint64_t(P % M) * 2 * i + 1;
+			if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) ||
+			    (q%13 == 0)) {// || (q%17 == 0) || (q%19 == 0)) {
+                                Kx[i] = 0;
+                        } else {
+                                Kx[i] = 1;
+				ones++;
+                        }
+		}
+		printf("init: %0.3f sieved\n", ones/M);
 	}
 
 
@@ -826,7 +840,7 @@ public:
         */
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        //beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	//beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 

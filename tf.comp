@@ -26,6 +26,7 @@
 
 layout (local_size_x = 64) in;
 
+
 // for speed, we only have space to return one found factor.  In the case of P with multiple close factors,
 // which could be found in the same invocation, these will write over each other.  Since we might have 512K threads
 // looking at hundreds of factors each, we don't want to allocate memory to avoid this.  So we'll learn of a
@@ -37,24 +38,15 @@ layout(binding = 0) buffer buf
 	uint        Found[3];   // output to tell the CPU we found a K resulting in a factor
 	uint        Debug[2];   // output only used for debugging
 	uint        Init;       // If this is 0, then we setup our tables once.
-	uint        Kn;         // input/output: K + Kn represents the factor to be tested, threads get a Kn atomicAdd(Kn, 1)
-	                        // we also use the to tell the CPU side how much work we finished.
-
+	uint        M;          // used to calulate the stride for Ks to test.
 };
 
-//
-// enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
-//
-#define M (60060*17*19)
-//#define M (60060*17)
 
 // This is allocated in DEVICE_LOCAL memory, not shared with host.  See CPU code to see how this is allocated.
 // This is much faster to access from the shader, especially if the GPU is in a PCIx1 slot.
-// using an int per flag is wasteful, but seems to be fastest.  bool is much slower.
-// This is about 74MB, not not much really.
 layout(binding = 1) buffer buf2
 {
-	restrict int       K6[M];
+	int       K6xx[100];  // not used currently
 };
 
 struct uint96 {
@@ -124,11 +116,25 @@ void Inc(inout uint96 A) {
 		}
 	}
 }
+void Inc(inout uint192 A) {
+	Inc(A.L);
+	if (Zero(A.L)) {
+		Inc(A.H);
+	}
+}
 void Add(inout uint96 A, uint B) {
 	uint C;
 	A.x[0] = uaddCarry(A.x[0], B, C);
 	A.x[1] = uaddCarry(A.x[1], C, C);
 	A.x[2] += C;
+}
+void Add(inout uint96 A, uint96 B) {
+	uint c, c1;
+	A.x[0] = uaddCarry(A.x[0], B.x[0], c);
+	A.x[1] = uaddCarry(A.x[1], c, c1);
+	A.x[1] = uaddCarry(A.x[1], B.x[1], c);
+	A.x[2] = A.x[2] + B.x[2] + c + c1;
+
 }
 void Subxx(inout uint192 A, uint192 B) {
 
@@ -220,30 +226,6 @@ void Mul192(inout uint96 A, uint96 B, out uint192 R)
 	R.H.x[2] = uaddCarry(h[8], c, c1);
 }
 
-// not fast, only for init.
-bool Modz(uint192 X, uint q) {
-	double qinv = 0.99999999999999 / double(q);
-	uint192 Y;
-	uint96 Q, D;
-
-	Q.x = uvec3(q, 0, 0);
-	int i = 0;
-
-	while (i < 7 && Cmp(X, Q) > 0) {
-		double xqi = toF(X)*qinv;
-		fto96(xqi, D);
-		if (Zero(D)) {
-			D.x[0] = 1;
-		}
-		Mul192(D, Q, Y);
-		Sub(X, Y);
-		i++;
-	}
-	if (Cmp(X, Q) == 0 || Zero(X)) {
-		return true;
-	}
-	return false;
-}
 
 
 // Floating point version
@@ -281,9 +263,11 @@ void SqMod(inout uint96 A, uint96 Q, bool doshift, double qinv) {
 bool tf(uint96 k, uint p, int top) {
 	uint96 sq, q, pp;
 	uint192 t;
+
+	// q = 2 * p * k + 1
 	pp.x = uvec3(p, 0, 0);
 	Mul192(k, pp, t);
-	q = t.L;
+	q = t.L;  // q is limited to 96-bits
 	Lsh(q);
 	Inc(q);
 
@@ -305,66 +289,23 @@ bool tf(uint96 k, uint p, int top) {
 	return sq.x[0] == 1 && sq.x[1] == 0 && sq.x[2] == 0;
 }
 
-void init() {
-
-	uint  pm6 = P % M;
-
-	// CPU calls us with Kn==0, we want k = 0; k < M; so keep allocating k's, until Kn is too big.
-	while (true) {
-		uint k = atomicAdd(Kn, 1);
-		if (k > M) {
-			return;
-		}
-		k--; // start at zero
-
-		uint96 P, K;
-		uint192 Q;
-		P.x = uvec3(pm6, 0, 0);
-		K.x = uvec3(k, 0, 0);
-		Mul192(K, P, Q);
-		// Q.H == 0...
-		Lsh(Q.L);
-		Inc(Q.L);
-
-		if (((Q.L.x[0]&7) == 3) || ((Q.L.x[0]&7) == 5) || Modz(Q, 3) || Modz(Q, 5) ||
-		    Modz(Q,7) || Modz(Q, 11) || Modz(Q, 13) || Modz(Q, 17) || Modz(Q, 19)) {
-			K6[k] = 0;
-		} else {
-			K6[k] = 1;
-		}
-	}
-
-}
-
-
 void main() {
-
-	// When called with Init == 0, we need to initialize ourselves and return.
-	if (Init == 0) {
-		init();
-		return;
-	}
-
 	//
-	// K is the base starting value for this invocation.  Each thread grabs a unique Kn,
-	// then tests k = (K + Kn).
-	// The cpu always calls us with K == 0 mod M. So we can use Kn%M vs K%M.
-	// But, we do have to be careful here that Kn doesn't overflow.
+	// K is the base starting value for this invocation. 
 	//
 	uint p = uint(P);
 	uint96 k;
-	k.x = uvec3(0, 0, 0);
-	// use for loop when testing, or we get stuck in a nasty loop.
-	// for (int c = 0; c < 150; c++) {
-	while (true) {
-		uint kn = atomicAdd(Kn, 1);
-		if (K6[kn%(M)] == 1)
-		{
-			k.x = uvec3(K[0], K[1], K[2]);
-			Add(k, kn);
-			break;
-		}
-	}
+	k.x = uvec3(K[0], K[1], K[2]);
+
+	// each thread calculates the offset from the base K, this stride is probably 60060.
+	uint I = gl_GlobalInvocationID.x;
+	uint96 ii, mm;
+	uint192 o;
+	ii.x = uvec3(I, 0, 0);  mm.x = uvec3(M, 0, 0);
+	Mul192(ii, mm, o);
+
+	// the actual K this thread will test.
+	Add(k, o.L);
 
 	// check if something went terribly wrong above.
 	// We didn't find a K to test at all?
