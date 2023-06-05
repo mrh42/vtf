@@ -26,7 +26,6 @@
 
 layout (local_size_x = 64) in;
 
-
 // for speed, we only have space to return one found factor.  In the case of P with multiple close factors,
 // which could be found in the same invocation, these will write over each other.  Since we might have 512K threads
 // looking at hundreds of factors each, we don't want to allocate memory to avoid this.  So we'll learn of a
@@ -38,7 +37,8 @@ layout(binding = 0) buffer buf
 	uint        Found[3];   // output to tell the CPU we found a K resulting in a factor
 	uint        Debug[2];   // output only used for debugging
 	uint        Init;       // If this is 0, then we setup our tables once.
-	uint        M;          // used to calulate the stride for Ks to test.
+	uint        Ll;          // Length of List
+	uint        List[6466460];
 };
 
 
@@ -46,7 +46,7 @@ layout(binding = 0) buffer buf
 // This is much faster to access from the shader, especially if the GPU is in a PCIx1 slot.
 layout(binding = 1) buffer buf2
 {
-	int       K6xx[100];  // not used currently
+	uint       K6[6466460];  // copy of List.  Just a tiny speed up.
 };
 
 struct uint96 {
@@ -290,6 +290,13 @@ bool tf(uint96 k, uint p, int top) {
 }
 
 void main() {
+	uint I = gl_GlobalInvocationID.x;
+	if (Init == 0) {
+		if (I < Ll) {
+			K6[I] = List[I];
+		}
+		return;
+	}
 	//
 	// K is the base starting value for this invocation. 
 	//
@@ -297,19 +304,18 @@ void main() {
 	uint96 k;
 	k.x = uvec3(K[0], K[1], K[2]);
 
-	// each thread calculates the offset from the base K, this stride is probably 60060.
-	uint I = gl_GlobalInvocationID.x;
-	uint96 ii, mm;
-	uint192 o;
-	ii.x = uvec3(I, 0, 0);  mm.x = uvec3(M, 0, 0);
-	Mul192(ii, mm, o);
+	if (I >= Ll) {
+		return;
+	}
+	uint96 oo;
+	oo.x = uvec3(K6[I], 0, 0);
 
 	// the actual K this thread will test.
-	Add(k, o.L);
+	Add(k, oo);
 
 	// check if something went terribly wrong above.
 	// We didn't find a K to test at all?
-	if (Zero(k)) {Debug[0]++;return;}
+	//if (Zero(k)) {Debug[0]++;return;}
 	// return;
 
 	int top = int(findMSB((p)));
