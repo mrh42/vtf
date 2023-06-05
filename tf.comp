@@ -23,7 +23,7 @@
 // also, maybe the difference isn't so much when not using uint64_t math.
 //
 
-
+#define ListN 76308480
 layout (local_size_x = 64) in;
 
 // for speed, we only have space to return one found factor.  In the case of P with multiple close factors,
@@ -38,7 +38,7 @@ layout(binding = 0) buffer buf
 	uint        Debug[2];   // output only used for debugging
 	uint        Init;       // If this is 0, then we setup our tables once.
 	uint        Ll;          // Length of List
-	uint        List[6466460];
+	uint        List[ListN];
 };
 
 
@@ -46,7 +46,7 @@ layout(binding = 0) buffer buf
 // This is much faster to access from the shader, especially if the GPU is in a PCIx1 slot.
 layout(binding = 1) buffer buf2
 {
-	uint       K6[6466460];  // copy of List.  Just a tiny speed up.
+	uint       Listx[ListN];  // copy of List.  Just a tiny speed up.
 };
 
 struct uint96 {
@@ -227,7 +227,6 @@ void Mul192(inout uint96 A, uint96 B, out uint192 R)
 }
 
 
-
 // Floating point version
 void SqMod(inout uint96 A, uint96 Q, bool doshift, double qinv) {
 	uint192 X, Y;
@@ -293,14 +292,13 @@ void main() {
 	uint I = gl_GlobalInvocationID.x;
 	if (Init == 0) {
 		if (I < Ll) {
-			K6[I] = List[I];
+			Listx[I] = List[I];
 		}
 		return;
 	}
 	//
 	// K is the base starting value for this invocation. 
 	//
-	uint p = uint(P);
 	uint96 k;
 	k.x = uvec3(K[0], K[1], K[2]);
 
@@ -308,7 +306,7 @@ void main() {
 		return;
 	}
 	uint96 oo;
-	oo.x = uvec3(K6[I], 0, 0);
+	oo.x = uvec3(Listx[I], 0, 0);
 
 	// the actual K this thread will test.
 	Add(k, oo);
@@ -318,7 +316,7 @@ void main() {
 	//if (Zero(k)) {Debug[0]++;return;}
 	// return;
 
-	int top = int(findMSB((p)));
+	int top = int(findMSB(P));
  
 	if (tf(k, P, top)) {
 		// return the 96-bit K

@@ -10,13 +10,13 @@
 
 // enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
 //
-const uint M = 60060 * 17 * 19;
-uint Kx[M];
+const uint M = 60060 * 17 * 19 * 23;
 
 // total threads to start, check shader, need atleast enough to to initialize the
 // DEVICE_LOCAL arrays below.
 //
-const int np = 3317760;
+//const int np = 3317760;
+const int np = 76308480;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 // it is somewhat slow, compared to DEVICE_LOCAL memory.
@@ -27,13 +27,15 @@ struct Stuff {
 	uint    Debug[2];
 	uint    Init;
 	uint    Ll;
-        uint    List[M/3];
+        uint    List[np];
 
 };
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
 // This is much to access faster from the shader, especially if the GPU is in a PCIx1 slot.
 struct Stuff2 {
-	uint        K6[M/3];  // unused in this current version
+	uint       Px;
+	uint       Llx;
+	uint       Listx[np];  // unused in this current version
 };
 
 uint64_t K1, K2, P;
@@ -243,14 +245,16 @@ public:
 		p->Debug[0] = p->Debug[1] = 0;
 		p->Init = 0;
 
+		//
+		// This takes a second or so on the cpu, but is so much easier with 64bit ints.
+		//
 		unsigned int ones = 0;
 		for (uint64_t i = 0; i < M; i++) {
 			uint64_t q = uint64_t(P % M) * 2 * i + 1;
 			if (((q&7) == 3) || ((q&7) == 5) || (q%3 == 0) || (q%5 == 0) || (q%7 == 0) || (q%11 == 0) ||
-			    (q%13 == 0) || (q%17 == 0) || (q%19 == 0)) {// || (q%23 == 0)) {
-                                Kx[i] = 0;
+			    (q%13 == 0) || (q%17 == 0) || (q%19 == 0) || (q%23 == 0)) {
+                                //Kx[i] = 0;
                         } else {
-                                Kx[i] = 1;
 				p->List[ones] = i;
 				ones++;
                         }
