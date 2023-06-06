@@ -33,12 +33,14 @@ struct Stuff {
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
 // This is much to access faster from the shader, especially if the GPU is in a PCIx1 slot.
 struct Stuff2 {
-	uint       Px;
-	uint       Llx;
-	uint       Listx[np];  // unused in this current version
+	uint       Listx[np];  // copy of List.  Just a tiny speed up.
 };
 
-uint64_t K1, K2, P;
+//typedef __uint128_t uint128_t;
+
+uint64_t K1, K2;
+uint64_t P;
+
 uint DevN;
 
 #ifdef NDEBUG
@@ -117,7 +119,6 @@ private:
     VkDescriptorSetLayout descriptorSetLayout;
 
     /*
-    The mandelbrot set will be rendered to this buffer.
 
     The memory that backs the buffer is bufferMemory. 
     */
@@ -149,7 +150,6 @@ private:
     */
     uint32_t queueFamilyIndex;
 
-	uint32_t mrhDone;
 public:
     void run() {
 	bufferSize = sizeof(struct Stuff);
@@ -166,14 +166,15 @@ public:
         createComputePipeline();
 
 	createCommandBuffer();
-	//exit(0);
+
 	mrhInit();
+	uint32_t mrhDone = 0;
 	void* mappedMemory = NULL;
 	vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
 	if (p->Ll > np) {
-		printf("Ll:%d > np:%d\n", p->Ll, np);
+		printf("Error Ll:%d > np:%d\n", p->Ll, np);
 		exit(1);
 	}
 	uint64_t t = M * (P%M) * 2;
@@ -231,7 +232,6 @@ public:
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
-		mrhDone = 0;
 		printf("--K: %ld\n", K1);
 		K1 = M * (K1/M);
 		printf("++K: %ld\n", K1);
@@ -930,6 +930,8 @@ int main(int argc, char **argv) {
     K1 = atol(argv[2]);
     K2 = atol(argv[3]);
     DevN = atoi(argv[4]);
+
+    
     try {
         app.run();
     }
