@@ -8,7 +8,7 @@
 #include <cmath>
 #include <sys/time.h>
 
-// enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 19) in one shot.
+// enough flags to test test for (3,5)mod8, and 0mod(primes 3 -> 23) in one shot.
 //
 const uint M = 60060 * 17 * 19 * 23;
 
@@ -16,7 +16,7 @@ const uint M = 60060 * 17 * 19 * 23;
 // DEVICE_LOCAL arrays below.
 //
 //const int np = 3317760;
-const int np = 76308480;
+const int np = 1024*1024*48;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 // it is somewhat slow, compared to DEVICE_LOCAL memory.
@@ -26,14 +26,15 @@ struct Stuff {
 	uint    Found[3];
 	uint    Debug[2];
 	uint    Init;
+	uint    L;
 	uint    Ll;
-        uint    List[np];
+        uint    List[M/3];
 
 };
 // This is allocated in DEVICE_LOCAL memory, and is not shared with host.
 // This is much to access faster from the shader, especially if the GPU is in a PCIx1 slot.
 struct Stuff2 {
-	uint       Listx[np];  // copy of List.  Just a tiny speed up.
+	uint       Listx[M/3];  // copy of List.  Just a tiny speed up.
 };
 
 //typedef __uint128_t uint128_t;
@@ -173,10 +174,6 @@ public:
 	vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
-	if (p->Ll > np) {
-		printf("Error Ll:%d > np:%d\n", p->Ll, np);
-		exit(1);
-	}
 	uint64_t t = M * (P%M) * 2;
 	printf("M * PmodM * 2 = %lx\n", t);
 	uint64_t k64 = K1;
@@ -188,15 +185,14 @@ public:
 		runCommandBuffer();
 
 		gettimeofday(&t2, NULL);
-		
 		double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		if (1) {
 			double lb2 = log2(double(k64) * double(P) * 2.0);
-			printf("K: %ld P: %d %.1f %.2f%c debug:[%d,%d] -- %.2f ms %.2fM/sec\n", k64, p->P, lb2,
+			printf("K: %ld P: %d %.1f %.2f%c debug:[%d,%d] -- %.2f ms\n", k64, p->P, lb2,
 			       100* double(k64 - K1)/ double (K2 - K1), '%',
-			       p->Debug[0], p->Debug[1], elapsedTime, (M) / (1000*elapsedTime));
+			       p->Debug[0], p->Debug[1], elapsedTime); //, (np) / (1000*elapsedTime));
 		}
 		uint64_t f64 = (uint64_t(p->Found[1]) << 32) | p->Found[0];
 		if (f64) {
@@ -206,10 +202,14 @@ public:
 			mrhDone = 1;
 		}
 
-		k64 += M;
-		p->K[0] = (k64) & 0xffffffff;
-		p->K[1] = (k64)>>32;
-		p->K[2] = 0;
+		if (p->L >= p->Ll) {
+			k64 += M;
+			p->K[0] = (k64) & 0xffffffff;
+			p->K[1] = (k64)>>32;
+			p->K[2] = 0;
+
+			p->L = 0;
+		}
 						       
 		//p->Debug[0] = p->Debug[1] = 0;
 
@@ -259,12 +259,14 @@ public:
 				ones++;
                         }
 		}
+		p->L = 0;
 		p->Ll = ones;
 		printf("init: %d - %0.3f sieved\n", ones, double(ones)/M);
 		runCommandBuffer();  // initialize some shader stuff
 		printf("init done\n");
 
 		p->Init = 1;         // now we are done.
+		p->L = 0;
 
 		vkUnmapMemory(device, bufferMemory);
 	}

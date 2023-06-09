@@ -23,7 +23,7 @@
 // also, maybe the difference isn't so much when not using uint64_t math.
 //
 
-#define ListN 76308480
+#define ListN 72990720
 layout (local_size_x = 64) in;
 
 // for speed, we only have space to return one found factor.  In the case of P with multiple close factors,
@@ -37,6 +37,7 @@ layout(binding = 0) buffer buf
 	uint        Found[3];   // output to tell the CPU we found a K resulting in a factor
 	uint        Debug[2];   // output only used for debugging
 	uint        Init;       // If this is 0, then we setup our tables once.
+	uint        L;
 	uint        Ll;          // Length of List
 	uint        List[ListN];
 };
@@ -289,12 +290,15 @@ bool tf(uint96 k, uint p, int top) {
 }
 
 void main() {
-	uint I = gl_GlobalInvocationID.x;
+	//uint I = gl_GlobalInvocationID.x;
 	if (Init == 0) {
-		if (I < Ll) {
-			Listx[I] = List[I];
+		while (true) {
+			uint i = atomicAdd(L, 1);
+			if (i >= Ll) {
+				return;
+			}
+			Listx[i] = List[i];
 		}
-		return;
 	}
 	//
 	// K is the base starting value for this invocation. 
@@ -302,18 +306,19 @@ void main() {
 	uint96 k;
 	k.x = uvec3(K[0], K[1], K[2]);
 
-	if (I >= Ll) {
+	uint i = atomicAdd(L, 1);
+	if (i >= Ll) {
 		return;
 	}
 	uint96 oo;
-	oo.x = uvec3(Listx[I], 0, 0);
+	oo.x = uvec3(Listx[i], 0, 0);
 
 	// the actual K this thread will test.
 	Add(k, oo);
 
 	// check if something went terribly wrong above.
 	// We didn't find a K to test at all?
-	//if (Zero(k)) {Debug[0]++;return;}
+	if (Zero(k)) {Debug[0]++;return;}
 	// return;
 
 	int top = int(findMSB(P));
