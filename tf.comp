@@ -33,9 +33,9 @@ layout (local_size_x = 64) in;
 // factor, but not all of the found factors.
 layout(binding = 0) buffer buf
 {	
-	uint        P;          // input from CPU side
+	uint        P[2];          // input from CPU side
 	uint        K[3];       // base K input from CPU side
-	uint        Found[3];   // output to tell the CPU we found a K resulting in a factor
+	uint        Found[10][3];   // output to tell the CPU we found a K resulting in a factor
 	uint        Debug[2];   // output only used for debugging
 	uint        Init;       // If this is 0, then we setup our tables once.
 	uint        L;
@@ -277,17 +277,16 @@ void SqMod(inout uint96 A, uint96 Q, bool doshift, double qinv) {
 		Sub(X, Y);
 		i++;
 	}
-	//if (i > 3) {Debug[1]++;}
 	A = X.L;
 }
 
 
-bool tf(uint96 k, uint p, int top, uint oo) {
+bool tf(uint96 k, uint p[2], int top, uint oo) {
 	uint96 sq, q, pp;
 	uint192 t;
 
 	// q = 2 * p * k + 1
-	pp.x = uvec3(p, 0, 0);
+	pp.x = uvec3(p[0], p[1], 0);
 	Mul192(k, pp, t);
 	q = t.L;  // q is limited to 96-bits
 	Lsh(q);
@@ -305,7 +304,12 @@ bool tf(uint96 k, uint p, int top, uint oo) {
 	//  then compute mod Q.
 	sq.x = uvec3(1, 0, 0);
 	for (int b = top; b >= 0; b--) {
-		bool bb = (p & (1 << b)) != 0;
+		bool bb;
+		if (b < 32) {
+			bb = (p[0] & (1 << b)) != 0;
+		} else {
+			bb = (p[1] & (1 << (b-32))) != 0;
+		}
 		SqMod(sq, q, bb, qinv);
 	}
 	// If the result is 1, then we found a factor.
@@ -353,18 +357,23 @@ void main() {
 
 		// check if something went terribly wrong above.
 		// We didn't find a K to test at all?
-		if (Zero(k)) {Debug[0]++;return;}
-		// return;
+		if (Zero(k)) {return;}
+		//return;
 		
-		int top = int(findMSB(P));
-		
+		int top;
+		if (P[1] == 0) {
+			top = int(findMSB(P[0]));
+		} else {
+			top = 32 + int(findMSB(P[1]));
+		}
+
 		if (tf(k, P, top, i)) {
+			// How many have we found?
+			uint f = atomicAdd(Debug[1], 1);
 			// return the 96-bit K
-			Found[0] = k.x[0];
-			Found[1] = k.x[1];
-			Found[2] = k.x[2];
-			// How many did we find?
-			atomicAdd(Debug[1], 1);
+			Found[f][0] = k.x[0];
+			Found[f][1] = k.x[1];
+			Found[f][2] = k.x[2];
 		}
 		return;
 	}

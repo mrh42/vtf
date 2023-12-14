@@ -21,15 +21,15 @@ const uint32_t ListLen = 72990720;
 //
 // total threads to start.  choosen so each call to the gpu is around 50 to 100ms.
 //
-const int np = 1024*1024*64;
+const int np = 1024*1024*16;
 //const int np = ListLen;
 
 // This is allocated in HOST_VISIBLE_LOCAL memory, and is shared with host.
 // it is somewhat slow, compared to DEVICE_LOCAL memory.
 struct Stuff {
-	uint    P;
-	uint    K[3];
-	uint    Found[3];
+	uint    P[2];  // 64 bit
+	uint    K[3];  // 96, but only 64 used currently
+	uint    Found[10][3];
 	uint    Debug[2];
 	uint    Init;
 	uint    L;            // start with 0, each thread will increment with AtomicAdd(L, 1)  
@@ -47,10 +47,13 @@ struct Stuff2 {
 };
 
 
-uint64_t K1, K2;
-uint32_t P;
+uint64_t K1; //, K2;
+uint64_t P;
 
 uint DevN;
+
+double bitlimit;
+uint64_t kfound[100];
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
@@ -183,34 +186,55 @@ public:
 	struct Stuff *p = (struct Stuff *) mappedMemory;
 
 	uint64_t t = M * (P%M) * 2;
-	printf("M * PmodM * 2 = %lx\n", t);
+	//printf("M * PmodM * 2 = %lx\n", t);
 	uint64_t k64 = K1;
+	int calls = 0;
+	int found = 0;
 	while (1) {
 		
 		struct timeval t1, t2;
 		gettimeofday(&t1, NULL);
 
+		p->Debug[0] = 0;
+		p->Debug[1] = 0;
 		//printf("K mod M2: %ld\n", k64 % M2);
 		p->KmodM2 = uint(k64 % M2);
 		runCommandBuffer();
 		p->Init++;
+		calls++;
 
 		gettimeofday(&t2, NULL);
 		double elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;
 		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
-		if (1) {
-			double lb2 = log2(double(k64) * double(P) * 2.0);
-			printf("K: %ld P: %d %.1f %.2f%c debug:[%d,%d] -- %.2f ms\n", k64, p->P, lb2,
-			       100* double(k64 - K1)/ double (K2 - K1), '%',
-			       p->Debug[0], p->Debug[1], elapsedTime); //, (np) / (1000*elapsedTime));
-		}
-		uint64_t f64 = (uint64_t(p->Found[1]) << 32) | p->Found[0];
-		if (f64) {
-			printf("M%d has factor with K=%ld E: %d\n", p->P, f64, p->Debug[0]);
-			p->Found[0] = 0;
-			p->Found[1] = 0;
+		double lb2 = log2(double(k64) * double(P) * 2.0);
+		if (lb2 > bitlimit) {
 			mrhDone = 1;
+		}
+
+		for (int i = 0; i < 10; i++) {
+			uint64_t f64 = (uint64_t(p->Found[i][1]) << 32) | p->Found[i][0];
+			if (f64) {
+				kfound[found++] = f64;
+
+				double flb2 = log2(double(f64) * double(P) * 2.0);
+				printf("# %ld kfactor %ld E: %d D: %d %.1f\n", P, f64, p->Debug[0], p->Debug[1], flb2);
+
+				p->Found[i][0] = 0;
+				p->Found[i][1] = 0;
+				//mrhDone = 1;
+			}
+		}
+
+		if (mrhDone) {
+			time_t t ;
+			time(&t);
+			printf("%ld %ld %ld %.2f %d ", P, t, k64, bitlimit, found);
+			for (int i = 0; i < found; i++) {
+				printf("%ld ", kfound[i]);
+			}		       
+			printf("\n");
+			break;
 		}
 
 		if (p->L >= p->Ll) {
@@ -225,11 +249,10 @@ public:
 		}
 						       
 
-		if (k64 > K2) {
-			mrhDone = 1;
-		}
+		//if (k64 > K2) {
+		//	mrhDone = 1;
+		//}
     
-		if (mrhDone) { break; }
 	}
 	vkUnmapMemory(device, bufferMemory);
 		
@@ -244,16 +267,19 @@ public:
 		void* mappedMemory = NULL;
 		vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &mappedMemory);
 		struct Stuff *p = (struct Stuff *) mappedMemory;
-		printf("--K: %ld\n", K1);
+		//printf("--K: %ld\n", K1);
 		K1 = M * (K1/M);
-		printf("++K: %ld\n", K1);
+		//printf("++K: %ld\n", K1);
 		p->K[0] = K1 & 0xffffffff;
 		p->K[1] = (K1>>32) & 0xffffffff;
 		p->K[2] = 0;
-		p->P = P;
-		p->Found[0] = 0;
-		p->Found[1] = 0;
-		p->Found[2] = 0;
+		p->P[0] = P & 0xffffffff;
+		p->P[1] = (P>>32) & 0xffffffff;
+		for (int i = 0; i < 10; i++) {
+			p->Found[i][0] = 0;
+			p->Found[i][1] = 0;
+			p->Found[i][2] = 0;
+		}
 		p->Debug[0] = p->Debug[1] = 0;
 		p->Init = 0;
 
@@ -279,17 +305,17 @@ public:
 				p->List[ones] = i;
 				ones++;
 				if (ones > ListLen) {
-					printf("Error: list longer than expected: %d.  %d isn't prime??\n", ones, P);
+					printf("Error: list longer than expected: %d.  %ld isn't prime??\n", ones, P);
 					exit(1);
 				}
                         }
 		}
 		p->L = 0;
 		p->Ll = ones;
-		printf("init: %d - %0.3f sieved\n", ones, double(ones)/M);
+		//printf("init: %d - %0.3f sieved\n", ones, double(ones)/M);
 		//exit(1);
 		runCommandBuffer();  // initialize some shader stuff
-		printf("init done\n");
+		//printf("init done\n");
 
 		p->Init = 1;         // now we are done.
 		p->L = 0;
@@ -450,7 +476,7 @@ public:
             throw std::runtime_error("could not find a device with vulkan support");
         }
 
-	fprintf(stderr, "mrh: %d devices found\n", deviceCount);
+	//fprintf(stderr, "mrh: %d devices found\n", deviceCount);
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
@@ -613,7 +639,7 @@ public:
         */
         allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
         //allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-	printf("MI: %d \n", allocateInfo.memoryTypeIndex);
+	//printf("MI: %d \n", allocateInfo.memoryTypeIndex);
 
         VK_CHECK_RESULT(vkAllocateMemory(device, &allocateInfo, NULL, &bufferMemory)); // allocate memory on device.
         
@@ -636,7 +662,7 @@ public:
         allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocateInfo.allocationSize = memoryRequirements.size; // specify required memory.
         allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	printf("MI: %d \n", allocateInfo.memoryTypeIndex);
+	//printf("MI: %d \n", allocateInfo.memoryTypeIndex);
 
         VK_CHECK_RESULT(vkAllocateMemory(device, &allocateInfo, NULL, &bufferMemory2)); // allocate memory on device.
         
@@ -763,7 +789,7 @@ public:
         // read file contents.
         char *str = new char[filesizepadded];
         size_t n = fread(str, filesize, sizeof(char), fp);
-	fprintf(stderr, "read %ld bytes\n", n * filesize);
+	//fprintf(stderr, "mrh - read %ld bytes\n", n * filesize);
         fclose(fp);
 
         // data padding. 
@@ -826,7 +852,7 @@ public:
         /*
         Now, we finally create the compute pipeline. 
         */
-	fprintf(stderr, "mrh about to create\n");
+	//fprintf(stderr, "mrh about to create\n");
         VK_CHECK_RESULT(vkCreateComputePipelines(
             device, VK_NULL_HANDLE,
             1, &pipelineCreateInfo,
@@ -955,9 +981,10 @@ int main(int argc, char **argv) {
     ComputeApplication app;
 
     P = atol(argv[1]);
-    K1 = atol(argv[2]);
-    K2 = atol(argv[3]);
-    DevN = atoi(argv[4]);
+    //K1 = atol(argv[2]);
+    K1 = 0;
+    bitlimit = atof(argv[2]);
+    DevN = 0;
 
     
     try {
